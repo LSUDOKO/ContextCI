@@ -1,0 +1,139 @@
+"""Tests for the rule-based analysis path (the LLM path is exercised end-to-end)."""
+
+import pytest
+
+from src.blast_analyzer import _analyze_with_rules
+from src.models import (
+    AffectedAsset,
+    ChangeType,
+    DatasetGovernance,
+    LineageContext,
+    RecommendedAction,
+    RiskLevel,
+    SchemaChange,
+)
+
+
+def _change(change_type=ChangeType.DROP_COLUMN, column="customer_id"):
+    return SchemaChange(
+        table="analytics.orders",
+        column=column,
+        change_type=change_type,
+        source_file="migrations/001.sql",
+    )
+
+
+def _context(change, downstream=None, resolved=True, terms=None):
+    return LineageContext(
+        change=change,
+        dataset_urn="urn:li:dataset:(urn:li:dataPlatform:postgres,analytics.orders,PROD)" if resolved else None,
+        resolved=resolved,
+        governance=DatasetGovernance(urn="urn:x", glossary_terms=terms or []) if resolved else None,
+        downstream=downstream or [],
+        errors=[] if resolved else ["Table 'analytics.orders' not found in DataHub catalog"],
+    )
+
+
+def _asset(name, type_="dataset", confirmed=False, terms=None):
+    return AffectedAsset(
+        urn=f"urn:li:{type_}:{name}",
+        name=name,
+        type=type_,
+        column_level_confirmed=confirmed,
+        glossary_terms=terms or [],
+    )
+
+
+def test_added_column_is_never_breaking():
+    change = _change(ChangeType.ADD_COLUMN, "loyalty_tier")
+    report = _analyze_with_rules(change, _context(change))
+    assert report.is_breaking is False
+    assert report.recommended_action is RecommendedAction.APPROVE
+
+
+def test_no_downstream_approves():
+    change = _change()
+    report = _analyze_with_rules(change, _context(change))
+    assert report.recommended_action is RecommendedAction.APPROVE
+    assert report.risk_level is RiskLevel.LOW
+
+
+def test_unresolved_table_warns_rather_than_approving():
+    """Absent lineage is not evidence of safety."""
+    change = _change()
+    report = _analyze_with_rules(change, _context(change, resolved=False))
+    assert report.recommended_action is RecommendedAction.WARN
+    assert report.risk_level is RiskLevel.MEDIUM
+    assert report.generated_fixes, "a fallback migration should still be offered"
+
+
+def test_two_unconfirmed_datasets_warn():
+    change = _change()
+    ctx = _context(change, downstream=[_asset("dbt_a"), _asset("dbt_b")])
+    report = _analyze_with_rules(change, ctx)
+    assert report.is_breaking is True
+    assert report.risk_level is RiskLevel.MEDIUM
+    assert report.recommended_action is RecommendedAction.WARN
+
+
+def test_column_level_confirmation_escalates_to_block():
+    change = _change()
+    ctx = _context(change, downstream=[_asset("dbt_a", confirmed=True)])
+    report = _analyze_with_rules(change, ctx)
+    assert report.risk_level is RiskLevel.HIGH
+    assert report.recommended_action is RecommendedAction.BLOCK
+
+
+def test_dashboard_escalates_risk():
+    """Dashboards fail silently, so they weigh heavier than another table."""
+    change = _change()
+    ctx = _context(change, downstream=[_asset("exec_revenue", type_="dashboard")])
+    report = _analyze_with_rules(change, ctx)
+    assert report.risk_level is RiskLevel.HIGH
+
+
+def test_pii_term_escalates_to_critical():
+    change = _change()
+    ctx = _context(change, downstream=[_asset("dbt_a", confirmed=True)], terms=["PII"])
+    report = _analyze_with_rules(change, ctx)
+    assert report.risk_level is RiskLevel.CRITICAL
+    assert report.recommended_action is RecommendedAction.BLOCK
+
+
+def test_drop_table_with_readers_is_always_critical():
+    change = SchemaChange(
+        table="analytics.orders",
+        change_type=ChangeType.DROP_TABLE,
+        source_file="migrations/002.sql",
+    )
+    ctx = _context(change, downstream=[_asset("dbt_a")])
+    report = _analyze_with_rules(change, ctx)
+    assert report.risk_level is RiskLevel.CRITICAL
+    assert report.recommended_action is RecommendedAction.BLOCK
+
+
+def test_confirmed_downstream_narrows_the_relevant_set():
+    """When column-level lineage exists, unconfirmed neighbours don't inflate the count."""
+    change = _change()
+    downstream = [_asset("dbt_a", confirmed=True)] + [_asset(f"dbt_{i}") for i in range(6)]
+    report = _analyze_with_rules(change, _context(change, downstream=downstream))
+    # One confirmed consumer -> medium, escalated once for confirmation -> high.
+    assert report.risk_level is RiskLevel.HIGH
+
+
+@pytest.mark.parametrize(
+    "change_type,column",
+    [(ChangeType.DROP_COLUMN, "customer_id"), (ChangeType.RENAME_COLUMN, "customer_id")],
+)
+def test_breaking_changes_always_carry_a_fix(change_type, column):
+    change = SchemaChange(
+        table="analytics.orders",
+        column=column,
+        change_type=change_type,
+        new_value="cust_id" if change_type is ChangeType.RENAME_COLUMN else None,
+        source_file="migrations/003.sql",
+    )
+    ctx = _context(change, downstream=[_asset("dbt_a", confirmed=True)])
+    report = _analyze_with_rules(change, ctx)
+    assert report.generated_fixes
+    assert report.generated_fixes[0].code.strip()
