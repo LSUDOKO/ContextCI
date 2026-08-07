@@ -1,0 +1,63 @@
+name: ContextCI Schema Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+# Needed so the agent can comment on the PR and, when auto-fix is on, push
+# generated migrations back to the PR branch.
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: contextci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  schema-gate:
+    name: Blast radius check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ContextCI
+        # main.py exits 1 when the verdict is "block", which fails this job and
+        # blocks the merge via branch protection.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DATAHUB_MCP_URL: ${{ secrets.DATAHUB_MCP_URL }}
+          DATAHUB_GMS_TOKEN: ${{ secrets.DATAHUB_GMS_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Platform/env used when resolving table names to DataHub URNs.
+          DATAHUB_PLATFORM: ${{ vars.DATAHUB_PLATFORM || 'postgres' }}
+          DATAHUB_ENV: ${{ vars.DATAHUB_ENV || 'PROD' }}
+          # Set to "true" to let ContextCI commit generated fixes to the PR branch.
+          CONTEXTCI_AUTOFIX: ${{ vars.CONTEXTCI_AUTOFIX || 'false' }}
+        run: python -m src.main
+
+      - name: Upload blast report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contextci-blast-report
+          path: contextci-report.json
+          if-no-files-found: ignore
