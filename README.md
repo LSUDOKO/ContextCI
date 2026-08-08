@@ -240,6 +240,33 @@ SELECT field_foo, field_bar FROM SampleHiveDataset;
 The Claude path has not been exercised against the live API here — no Anthropic
 key was available on this machine.
 
+### Level 4: a real pull request
+
+Run against [`LSUDOKO/ContextCI#1`](https://github.com/LSUDOKO/ContextCI/pull/1),
+a PR whose only content is `ALTER TABLE SampleHiveDataset DROP COLUMN field_foo;`.
+
+| Checked | Result |
+| --- | --- |
+| Diff read from the GitHub API | 1 change found in `migrations/999_drop_field_foo.sql` |
+| Lineage resolved | 13 downstream assets |
+| Verdict | `block` / critical, exit code **1** — merge is stopped |
+| PR comment | posted once, then **edited in place** across five further runs (`created 11:12`, `updated 11:15`, one comment carrying the marker) |
+| Auto-fix | with `CONTEXTCI_AUTOFIX=true`, `fix(contextci): …` committed a compatibility view to the PR branch |
+| Graph write-back | `17/17` mutations; `Blast-Risk-High` from an earlier run **replaced** by `Blast-Risk-Critical`, not stacked |
+
+Three bugs surfaced here that no unit test would have caught, all fixed:
+
+- Risk tags accumulated instead of replacing, so one asset carried
+  `Blast-Risk-Critical`, `-Medium` and `-High` at once.
+- A non-breaking verdict skipped write-back entirely, leaving markers from an
+  earlier breaking run on the dataset forever.
+- **The verdict was not reproducible.** The same input returned `high / block`
+  twice and `medium / warn` on the third run. `temperature=0` does not fix this —
+  MoE batching on hosted inference is nondeterministic by construction. The
+  deterministic rules are now a floor: the model writes the summary, reasoning and
+  migration and may escalate, but can never rule a change safer than the rules
+  would have. Four consecutive runs then returned `block / critical` identically.
+
 **Quickstart gotchas hit on the way**, in case you hit them too:
 
 - The quickstart refuses to start below 13 GB of free Docker disk.

@@ -99,6 +99,16 @@ adding a field; the rest follows.
   in `blast_analyzer.py` is the exclusion list — extend it whenever a new write-back tag is added.
 - **The compliance gate only escalates.** It can force a block and raise risk to at least high;
   it must never soften a critical verdict or downgrade an action.
+- **The LLM can never make a change look safer than the rules do.** Hosted inference is not
+  reproducible — the same input gave `high/block` twice and `medium/warn` once on PR #1, and
+  `temperature=0` does not fix it. `_apply_floor` in `blast_analyzer.py` holds the verdict at
+  the deterministic baseline, and takes the baseline's per-asset risk with it so a floored
+  critical verdict still tags the whole blast radius. The model owns the narrative and the
+  migration; the rules own the decision.
+- **GMS wedges under disk pressure and stays wedged.** Below ~4 GB free, GraphQL lineage
+  queries time out at 30s and keep timing out after disk is freed — restart
+  `datahub-datahub-gms-quickstart-1` to clear the stuck thread pools. A trivial `dataset(urn)`
+  query should answer in ~1s; 45s means restart it.
 
 ## DataHub skills
 
