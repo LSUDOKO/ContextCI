@@ -45,7 +45,7 @@ _GITHUB_HANDLE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
 def _mentions_enabled() -> bool:
     """@-mentioning is opt-in: DataHub owner names are not always GitHub handles,
     and a wrong guess pings an unrelated person on every PR."""
-    return os.getenv("CONTEXTCI_MENTION_OWNERS", "false").lower() in ("1", "true", "yes")
+    return (os.getenv("CONTEXTCI_MENTION_OWNERS") or "false").lower() in ("1", "true", "yes")
 
 
 def _render_owner(owner: Owner) -> str:

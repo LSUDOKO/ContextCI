@@ -212,3 +212,24 @@ def test_flooring_also_restores_the_per_asset_risk():
                         recommended_action=RecommendedAction.BLOCK, affected_assets=[hot])
     out = _apply_floor(model, rules)
     assert [a.risk for a in out.affected_assets] == [RiskLevel.CRITICAL]
+
+
+def test_empty_env_var_falls_back_to_the_default(monkeypatch):
+    """An unset GitHub Actions `vars.X` interpolates to "", not to absent —
+    os.getenv(name, default) would hand the SDK an empty model name."""
+    import importlib
+    import src.blast_analyzer as ba
+
+    monkeypatch.setenv("CONTEXTCI_GROQ_MODEL", "")
+    monkeypatch.setenv("CONTEXTCI_GROQ_MAX_TOKENS", "")
+    monkeypatch.setenv("CONTEXTCI_MODEL", "")
+    importlib.reload(ba)
+    assert ba.GROQ_MODEL == "openai/gpt-oss-120b"
+    assert ba.ANTHROPIC_MODEL == "claude-opus-5"
+    assert ba.GROQ_MAX_TOKENS == 4000
+
+    monkeypatch.setenv("CONTEXTCI_GROQ_MODEL", "llama-3.3-70b-versatile")
+    importlib.reload(ba)
+    assert ba.GROQ_MODEL == "llama-3.3-70b-versatile"
+    monkeypatch.delenv("CONTEXTCI_GROQ_MODEL")
+    importlib.reload(ba)

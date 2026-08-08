@@ -32,13 +32,13 @@ logger = logging.getLogger(__name__)
 
 # Two providers are supported. Whichever key is present wins; Anthropic first
 # when both are set. Neither present means the rule-based analyzer runs.
-ANTHROPIC_MODEL = os.getenv("CONTEXTCI_MODEL", "claude-opus-5")
-GROQ_MODEL = os.getenv("CONTEXTCI_GROQ_MODEL", "openai/gpt-oss-120b")
+ANTHROPIC_MODEL = os.getenv("CONTEXTCI_MODEL") or "claude-opus-5"
+GROQ_MODEL = os.getenv("CONTEXTCI_GROQ_MODEL") or "openai/gpt-oss-120b"
 MAX_TOKENS = 16000
 # Groq counts `max_tokens` against the per-minute token budget, and the free tier
 # allows 8000 TPM — a 16000-token ceiling makes every request a 413 before the
 # model even runs. A verdict plus a migration fits comfortably in this.
-GROQ_MAX_TOKENS = int(os.getenv("CONTEXTCI_GROQ_MAX_TOKENS", "4000"))
+GROQ_MAX_TOKENS = int(os.getenv("CONTEXTCI_GROQ_MAX_TOKENS") or 4000)
 
 SYSTEM_PROMPT = """\
 You are ContextCI, a data reliability engineer reviewing a schema change in a pull request.
