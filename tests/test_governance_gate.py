@@ -77,6 +77,26 @@ def test_additive_change_never_gates():
     assert gate.reasons == []
 
 
+def test_contextci_own_tags_are_not_governance_signal():
+    """Blast-Risk-Critical from a previous run must not gate the next one."""
+    change = _change()
+    ctx = _context(
+        change,
+        source_tags=["Schema-Change-Pending", "PR-Under-Review"],
+        downstream=[_asset("dim_users", tags=["Blast-Risk-Critical"])],
+    )
+    gate = evaluate_governance_gate(change, ctx)
+    assert gate.requires_security_review is False
+    assert gate.tier1_assets == []
+
+
+def test_a_real_critical_tag_still_gates():
+    """The self-tag filter must not swallow a genuine user tag."""
+    change = _change()
+    ctx = _context(change, downstream=[_asset("dim_users", tags=["Business-Critical"])])
+    assert evaluate_governance_gate(change, ctx).requires_security_review is True
+
+
 def test_clean_dataset_does_not_gate():
     change = _change()
     gate = evaluate_governance_gate(change, _context(change, source_terms=["Bronze"]))

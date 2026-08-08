@@ -181,10 +181,23 @@ DESTRUCTIVE = (
 )
 
 
+# Tags ContextCI writes back itself. They must never be read as governance
+# signal: Blast-Risk-Critical would otherwise match the "critical" Tier-1 marker
+# on the next run and gate a change that was never regulated.
+CONTEXTCI_TAGS = (
+    "schema-change-pending",
+    "pr-under-review",
+    "security-review-required",
+    "blast-risk-",
+)
+
+
 def _matches(labels, markers) -> List[str]:
     hits = []
     for label in labels:
         low = label.lower().replace(" ", "-")
+        if any(low.startswith(own) for own in CONTEXTCI_TAGS):
+            continue
         if any(marker in low for marker in markers):
             hits.append(label)
     return hits

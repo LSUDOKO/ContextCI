@@ -77,7 +77,7 @@ def run(repo_full_name: str, pr_number: int) -> RunResult:
             )
             result.verdicts.append(ChangeVerdict(change=change, context=context, report=report))
 
-        _write_back(client, result, repo_full_name, pr_number)
+        _write_back(client, result, _pr_url(repo_full_name, pr_number), f"PR #{pr_number}")
     finally:
         client.close()
 
@@ -85,14 +85,13 @@ def run(repo_full_name: str, pr_number: int) -> RunResult:
 
 
 def _write_back(
-    client: DataHubMCPClient, result: RunResult, repo_full_name: str, pr_number: int
+    client: DataHubMCPClient, result: RunResult, pr_url: str, pr_label: str
 ) -> None:
     """Phase 4b — mutate the DataHub graph so the catalog records the pending change."""
     if not client.available:
         logger.info("phase 4b: skipped, DataHub unavailable")
         return
 
-    pr_url = _pr_url(repo_full_name, pr_number)
     for verdict in result.verdicts:
         if not verdict.report.is_breaking or not verdict.context.dataset_urn:
             continue
@@ -102,7 +101,7 @@ def _write_back(
             else f"table `{verdict.change.table}`"
         )
         note = (
-            f"Pending PR #{pr_number}: {verdict.change.change_type.value.replace('_', ' ')} on "
+            f"Pending {pr_label}: {verdict.change.change_type.value.replace('_', ' ')} on "
             f"{target}. Blast radius: {len(verdict.report.affected_assets)} downstream asset(s), "
             f"risk {verdict.report.risk_level.value}. Flagged by ContextCI."
         )
@@ -208,6 +207,14 @@ def run_local(diff_path: str) -> RunResult:
                 "phase 3: %s risk=%s action=%s",
                 change.identity, report.risk_level.value, report.recommended_action.value,
             )
+        # Only writes when TOOLS_IS_MUTATION_ENABLED was set explicitly — the
+        # default above turns it off, so a local run is read-only unless asked.
+        _write_back(
+            client,
+            result,
+            f"file://{os.path.abspath(diff_path)}",
+            f"local run of {os.path.basename(diff_path)}",
+        )
     finally:
         client.close()
     return result

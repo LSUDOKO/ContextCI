@@ -2,173 +2,608 @@
   "verdicts": [
     {
       "change": {
-        "table": "analytics.orders",
-        "column": "customer_id",
+        "table": "SampleHiveDataset",
+        "column": "field_foo",
         "change_type": "drop_column",
         "old_type": null,
         "new_type": null,
         "new_value": null,
-        "source_file": "migrations/007_drop_customer_id.sql",
-        "source_line": 4,
-        "raw_statement": "ALTER TABLE analytics.orders DROP COLUMN customer_id;"
+        "source_file": "migrations/012_drop_field_foo.sql",
+        "source_line": 2,
+        "raw_statement": "ALTER TABLE SampleHiveDataset DROP COLUMN field_foo;"
       },
       "context": {
         "change": {
-          "table": "analytics.orders",
-          "column": "customer_id",
+          "table": "SampleHiveDataset",
+          "column": "field_foo",
           "change_type": "drop_column",
           "old_type": null,
           "new_type": null,
           "new_value": null,
-          "source_file": "migrations/007_drop_customer_id.sql",
-          "source_line": 4,
-          "raw_statement": "ALTER TABLE analytics.orders DROP COLUMN customer_id;"
+          "source_file": "migrations/012_drop_field_foo.sql",
+          "source_line": 2,
+          "raw_statement": "ALTER TABLE SampleHiveDataset DROP COLUMN field_foo;"
         },
-        "dataset_urn": null,
-        "resolved": false,
-        "governance": null,
-        "profile": null,
-        "usage": null,
-        "downstream": [],
-        "upstream": [],
-        "errors": [
-          "DataHub unreachable: ConnectionError: HTTPConnectionPool(host='localhost', port=3002): Max retries exceeded with url: /config (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=3002): Failed to establish a new connection: [Errno 111] Connection refused\"))"
-        ]
-      },
-      "report": {
-        "is_breaking": false,
-        "risk_level": "medium",
-        "summary": "`analytics.orders` is not in the DataHub catalog, so the blast radius of this drop column could not be verified.",
-        "affected_assets": [],
-        "generated_fixes": [
+        "dataset_urn": "urn:li:dataset:(urn:li:dataPlatform:hive,SampleHiveDataset,PROD)",
+        "resolved": true,
+        "governance": {
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,SampleHiveDataset,PROD)",
+          "description": null,
+          "owners": [
+            {
+              "urn": "urn:li:corpuser:jdoe",
+              "name": "John Doe",
+              "type": "user",
+              "email": "jdoe@linkedin.com"
+            },
+            {
+              "urn": "urn:li:corpuser:datahub",
+              "name": "DataHub",
+              "type": "user",
+              "email": null
+            }
+          ],
+          "glossary_terms": [],
+          "tags": [
+            "Legacy",
+            "Schema-Change-Pending",
+            "PR-Under-Review",
+            "Security-Review-Required"
+          ],
+          "columns": [
+            "field_foo",
+            "field_bar"
+          ]
+        },
+        "profile": {
+          "row_count": 4500,
+          "column_count": 2,
+          "size_in_bytes": 842000200000,
+          "column_null_fraction": 0.0,
+          "column_distinct_count": 2
+        },
+        "usage": {
+          "total_queries": 2,
+          "unique_users": 1,
+          "column_query_count": 45,
+          "top_queries": [
+            "select * from `SampleHiveDataset`",
+            "select field_foo, field_bar from `SampleHiveDataset`"
+          ]
+        },
+        "downstream": [
           {
-            "file_path": "migrations/compat_analytics_orders_customer_id.sql",
-            "language": "sql",
-            "code": "-- ContextCI: staged removal of analytics.orders.customer_id\n-- Step 1 (this PR): expose a compatibility view so downstream readers keep working.\nCREATE OR REPLACE VIEW analytics.orders_compat AS\nSELECT\n    *,\n    NULL AS customer_id  -- deprecated, removal scheduled\nFROM analytics.orders;\n\n-- Step 2 (follow-up release, after downstream owners migrate):\n-- ALTER TABLE analytics.orders DROP COLUMN customer_id;\n-- DROP VIEW analytics.orders_compat;\n",
-            "description": "Compatibility view keeping `customer_id` readable for unknown downstream assets while they migrate. Drop the column in a follow-up release.",
-            "target_asset": null
+            "urn": "urn:li:dataJob:(urn:li:dataFlow:(airflow,dag_abc,PROD),task_123)",
+            "name": "User Creations",
+            "type": "dataJob",
+            "platform": null,
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 2,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:dataJob:(urn:li:dataFlow:(airflow,dag_abc,PROD),task_456)",
+            "name": "User Deletions",
+            "type": "dataJob",
+            "platform": null,
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 2,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,fct_users_created,PROD)",
+            "name": "fct_users_created",
+            "type": "dataset",
+            "platform": "hive",
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:jdoe",
+                "name": "John Doe",
+                "type": "user",
+                "email": "jdoe@linkedin.com"
+              },
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [
+              "Blast-Risk-Critical"
+            ],
+            "degree": 2,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,fct_users_deleted,PROD)",
+            "name": "fct_users_deleted",
+            "type": "dataset",
+            "platform": "hive",
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:jdoe",
+                "name": "John Doe",
+                "type": "user",
+                "email": "jdoe@linkedin.com"
+              },
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [
+              "Blast-Risk-Critical"
+            ],
+            "degree": 2,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,logging_events,PROD)",
+            "name": "logging_events",
+            "type": "dataset",
+            "platform": "hive",
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:jdoe",
+                "name": "John Doe",
+                "type": "user",
+                "email": "jdoe@linkedin.com"
+              },
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [
+              "Blast-Risk-Critical"
+            ],
+            "degree": 1,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,project/root/events/logging_events_bckp,PROD)",
+            "name": "project/root/events/logging_events_bckp",
+            "type": "dataset",
+            "platform": "s3",
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:jdoe",
+                "name": "John Doe",
+                "type": "user",
+                "email": "jdoe@linkedin.com"
+              },
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [
+              "Blast-Risk-Critical"
+            ],
+            "degree": 2,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:mlFeature:(user_analytics,date_joined)",
+            "name": "user_analytics,date_joined",
+            "type": "mlfeature",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:mlFeature:(user_features,is_premium_user)",
+            "name": "user_features,is_premium_user",
+            "type": "mlfeature",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:mlFeature:(user_features,number_of_visits)",
+            "name": "user_features,number_of_visits",
+            "type": "mlfeature",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:mlFeature:(user_features,regions)",
+            "name": "user_features,regions",
+            "type": "mlfeature",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:mlPrimaryKey:(user_analytics,user_name)",
+            "name": "user_analytics,user_name",
+            "type": "mlprimary_key",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:mlPrimaryKey:(user_features,user_id)",
+            "name": "user_features,user_id",
+            "type": "mlprimary_key",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:mlPrimaryKey:(user_features,user_name)",
+            "name": "user_features,user_name",
+            "type": "mlprimary_key",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "medium"
           }
         ],
-        "recommended_action": "warn",
-        "reasoning": "DataHub unreachable: ConnectionError: HTTPConnectionPool(host='localhost', port=3002): Max retries exceeded with url: /config (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=3002): Failed to establish a new connection: [Errno 111] Connection refused\"))",
-        "governance_gate": {
-          "requires_security_review": false,
-          "sensitive_terms": [],
-          "tier1_assets": [],
-          "reasons": []
-        }
-      }
-    },
-    {
-      "change": {
-        "table": "users",
-        "column": "email",
-        "change_type": "rename_column",
-        "old_type": null,
-        "new_type": null,
-        "new_value": "email_address",
-        "source_file": "migrations/008_rename_email.py",
-        "source_line": 8,
-        "raw_statement": "op.alter_column('users', 'email', new_column_name='email_address')"
-      },
-      "context": {
-        "change": {
-          "table": "users",
-          "column": "email",
-          "change_type": "rename_column",
-          "old_type": null,
-          "new_type": null,
-          "new_value": "email_address",
-          "source_file": "migrations/008_rename_email.py",
-          "source_line": 8,
-          "raw_statement": "op.alter_column('users', 'email', new_column_name='email_address')"
-        },
-        "dataset_urn": null,
-        "resolved": false,
-        "governance": null,
-        "profile": null,
-        "usage": null,
-        "downstream": [],
-        "upstream": [],
-        "errors": [
-          "DataHub unreachable: ConnectionError: HTTPConnectionPool(host='localhost', port=3002): Max retries exceeded with url: /config (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=3002): Failed to establish a new connection: [Errno 111] Connection refused\"))"
-        ]
-      },
-      "report": {
-        "is_breaking": false,
-        "risk_level": "medium",
-        "summary": "`users` is not in the DataHub catalog, so the blast radius of this rename column could not be verified.",
-        "affected_assets": [],
-        "generated_fixes": [
+        "upstream": [
           {
-            "file_path": "migrations/compat_users_email.sql",
-            "language": "sql",
-            "code": "-- ContextCI: backward-compatible rename of users.email -> email_address\nCREATE OR REPLACE VIEW users_compat AS\nSELECT\n    *,\n    email_address AS email  -- old name, deprecated\nFROM users;\n\n-- dbt equivalent for downstream models still selecting the old name:\n-- SELECT COALESCE(email_address, email) AS email FROM {{ ref('users') }}\n",
-            "description": "Expose both `email` and `email_address` so unknown downstream assets can migrate without a coordinated deploy.",
-            "target_asset": null
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:hdfs,SampleHdfsDataset,PROD)",
+            "name": "SampleHdfsDataset",
+            "type": "dataset",
+            "platform": "hdfs",
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:jdoe",
+                "name": "John Doe",
+                "type": "user",
+                "email": "jdoe@linkedin.com"
+              },
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 1,
+            "column_level_confirmed": false,
+            "risk": "medium"
+          },
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:kafka,SampleKafkaDataset,PROD)",
+            "name": "SampleKafkaDataset",
+            "type": "dataset",
+            "platform": "kafka",
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:jdoe",
+                "name": "John Doe",
+                "type": "user",
+                "email": "jdoe@linkedin.com"
+              },
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 2,
+            "column_level_confirmed": false,
+            "risk": "medium"
           }
         ],
-        "recommended_action": "warn",
-        "reasoning": "DataHub unreachable: ConnectionError: HTTPConnectionPool(host='localhost', port=3002): Max retries exceeded with url: /config (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=3002): Failed to establish a new connection: [Errno 111] Connection refused\"))",
-        "governance_gate": {
-          "requires_security_review": false,
-          "sensitive_terms": [],
-          "tier1_assets": [],
-          "reasons": []
-        }
-      }
-    },
-    {
-      "change": {
-        "table": "dim_customers",
-        "column": "legacy_signup_source",
-        "change_type": "drop_column",
-        "old_type": null,
-        "new_type": null,
-        "new_value": null,
-        "source_file": "models/marts/dim_customers.yml",
-        "source_line": null,
-        "raw_statement": "dbt schema: column 'legacy_signup_source' removed from model 'dim_customers'"
-      },
-      "context": {
-        "change": {
-          "table": "dim_customers",
-          "column": "legacy_signup_source",
-          "change_type": "drop_column",
-          "old_type": null,
-          "new_type": null,
-          "new_value": null,
-          "source_file": "models/marts/dim_customers.yml",
-          "source_line": null,
-          "raw_statement": "dbt schema: column 'legacy_signup_source' removed from model 'dim_customers'"
-        },
-        "dataset_urn": null,
-        "resolved": false,
-        "governance": null,
-        "profile": null,
-        "usage": null,
-        "downstream": [],
-        "upstream": [],
-        "errors": [
-          "DataHub unreachable: ConnectionError: HTTPConnectionPool(host='localhost', port=3002): Max retries exceeded with url: /config (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=3002): Failed to establish a new connection: [Errno 111] Connection refused\"))"
-        ]
+        "errors": []
       },
       "report": {
-        "is_breaking": false,
-        "risk_level": "medium",
-        "summary": "`dim_customers` is not in the DataHub catalog, so the blast radius of this drop column could not be verified.",
-        "affected_assets": [],
-        "generated_fixes": [
+        "is_breaking": true,
+        "risk_level": "critical",
+        "summary": "Drop column on `SampleHiveDataset.field_foo` affects 13 downstream asset(s), 0 of which DataHub confirms read this column.",
+        "affected_assets": [
           {
-            "file_path": "migrations/compat_dim_customers_legacy_signup_source.sql",
-            "language": "sql",
-            "code": "-- ContextCI: staged removal of dim_customers.legacy_signup_source\n-- Step 1 (this PR): expose a compatibility view so downstream readers keep working.\nCREATE OR REPLACE VIEW dim_customers_compat AS\nSELECT\n    *,\n    NULL AS legacy_signup_source  -- deprecated, removal scheduled\nFROM dim_customers;\n\n-- Step 2 (follow-up release, after downstream owners migrate):\n-- ALTER TABLE dim_customers DROP COLUMN legacy_signup_source;\n-- DROP VIEW dim_customers_compat;\n",
-            "description": "Compatibility view keeping `legacy_signup_source` readable for unknown downstream assets while they migrate. Drop the column in a follow-up release.",
-            "target_asset": null
+            "urn": "urn:li:dataJob:(urn:li:dataFlow:(airflow,dag_abc,PROD),task_123)",
+            "name": "User Creations",
+            "type": "dataJob",
+            "platform": null,
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 2,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:dataJob:(urn:li:dataFlow:(airflow,dag_abc,PROD),task_456)",
+            "name": "User Deletions",
+            "type": "dataJob",
+            "platform": null,
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 2,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,fct_users_created,PROD)",
+            "name": "fct_users_created",
+            "type": "dataset",
+            "platform": "hive",
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:jdoe",
+                "name": "John Doe",
+                "type": "user",
+                "email": "jdoe@linkedin.com"
+              },
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [
+              "Blast-Risk-Critical"
+            ],
+            "degree": 2,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,fct_users_deleted,PROD)",
+            "name": "fct_users_deleted",
+            "type": "dataset",
+            "platform": "hive",
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:jdoe",
+                "name": "John Doe",
+                "type": "user",
+                "email": "jdoe@linkedin.com"
+              },
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [
+              "Blast-Risk-Critical"
+            ],
+            "degree": 2,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,logging_events,PROD)",
+            "name": "logging_events",
+            "type": "dataset",
+            "platform": "hive",
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:jdoe",
+                "name": "John Doe",
+                "type": "user",
+                "email": "jdoe@linkedin.com"
+              },
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [
+              "Blast-Risk-Critical"
+            ],
+            "degree": 1,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,project/root/events/logging_events_bckp,PROD)",
+            "name": "project/root/events/logging_events_bckp",
+            "type": "dataset",
+            "platform": "s3",
+            "owners": [
+              {
+                "urn": "urn:li:corpuser:jdoe",
+                "name": "John Doe",
+                "type": "user",
+                "email": "jdoe@linkedin.com"
+              },
+              {
+                "urn": "urn:li:corpuser:datahub",
+                "name": "DataHub",
+                "type": "user",
+                "email": null
+              }
+            ],
+            "glossary_terms": [],
+            "tags": [
+              "Blast-Risk-Critical"
+            ],
+            "degree": 2,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:mlFeature:(user_analytics,date_joined)",
+            "name": "user_analytics,date_joined",
+            "type": "mlfeature",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:mlFeature:(user_features,is_premium_user)",
+            "name": "user_features,is_premium_user",
+            "type": "mlfeature",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:mlFeature:(user_features,number_of_visits)",
+            "name": "user_features,number_of_visits",
+            "type": "mlfeature",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:mlFeature:(user_features,regions)",
+            "name": "user_features,regions",
+            "type": "mlfeature",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:mlPrimaryKey:(user_analytics,user_name)",
+            "name": "user_analytics,user_name",
+            "type": "mlprimary_key",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:mlPrimaryKey:(user_features,user_id)",
+            "name": "user_features,user_id",
+            "type": "mlprimary_key",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "critical"
+          },
+          {
+            "urn": "urn:li:mlPrimaryKey:(user_features,user_name)",
+            "name": "user_features,user_name",
+            "type": "mlprimary_key",
+            "platform": null,
+            "owners": [],
+            "glossary_terms": [],
+            "tags": [],
+            "degree": 3,
+            "column_level_confirmed": false,
+            "risk": "critical"
           }
         ],
-        "recommended_action": "warn",
-        "reasoning": "DataHub unreachable: ConnectionError: HTTPConnectionPool(host='localhost', port=3002): Max retries exceeded with url: /config (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=3002): Failed to establish a new connection: [Errno 111] Connection refused\"))",
+        "generated_fixes": [
+          {
+            "file_path": "migrations/compat_SampleHiveDataset_field_foo.sql",
+            "language": "sql",
+            "code": "-- ContextCI: staged removal of SampleHiveDataset.field_foo\n-- Step 1 (this PR): expose a compatibility view so downstream readers keep working.\nCREATE OR REPLACE VIEW SampleHiveDataset_compat AS\nSELECT\n    *,\n    NULL AS field_foo  -- deprecated, removal scheduled\nFROM SampleHiveDataset;\n\n-- Step 2 (follow-up release, after downstream owners migrate):\n-- ALTER TABLE SampleHiveDataset DROP COLUMN field_foo;\n-- DROP VIEW SampleHiveDataset_compat;\n",
+            "description": "Compatibility view keeping `field_foo` readable for User Creations, User Deletions, fct_users_created, fct_users_deleted, logging_events while they migrate. Drop the column in a follow-up release.",
+            "target_asset": "urn:li:dataset:(urn:li:dataPlatform:hive,SampleHiveDataset,PROD)"
+          }
+        ],
+        "recommended_action": "block",
+        "reasoning": "Rule-based analysis (no LLM available): risk scaled by downstream count, column-level confirmation, asset type and governance terms.",
         "governance_gate": {
           "requires_security_review": false,
           "sensitive_terms": [],
@@ -178,6 +613,6 @@
       }
     }
   ],
-  "degraded": true,
-  "degraded_reason": "ConnectionError: HTTPConnectionPool(host='localhost', port=3002): Max retries exceeded with url: /config (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=3002): Failed to establish a new connection: [Errno 111] Connection refused\"))"
+  "degraded": false,
+  "degraded_reason": null
 }
