@@ -123,3 +123,26 @@ Tests are pure — no network, no DataHub, no Anthropic API. The LLM path is exe
 end-to-end against a real PR; the rule table in `_analyze_with_rules` is what the unit tests
 pin down. When changing risk escalation, update `tests/test_blast_analyzer.py` in the same
 commit — the thresholds are the product.
+
+## Authenticated DataHub on this machine
+
+GMS was recreated with `METADATA_SERVICE_AUTH_ENABLED=true`, so anonymous calls now
+return 401 and `DATAHUB_GMS_TOKEN` in `.env` is load-bearing. Two things to remember if
+the container is ever rebuilt:
+
+- Keep the **`datahub-gms` network alias**. The frontend resolves GMS by that name; without
+  it login fails with `UnknownHostException: datahub-gms` and token minting is impossible.
+- Preserve all 74 env vars from `docker inspect`. GMS holds no state — MySQL, OpenSearch and
+  Kafka do — so recreating it loses nothing, but dropping an env var breaks it silently.
+
+`python scripts/make_datahub_token.py` mints a fresh PAT into `.env` (one month by default).
+
+## GitHub Actions notes
+
+The workflow is verified running on PR #1. Two traps already paid for:
+
+- A GitHub-hosted runner cannot reach a DataHub on localhost. The run degrades to diff-only
+  with a banner — correct behaviour, but full lineage in CI needs a reachable endpoint.
+- An **unset Actions `vars.X` interpolates to the empty string**, and `os.getenv(name, default)`
+  returns that empty string rather than the default. Always read config as
+  `os.getenv(x) or default`.

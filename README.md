@@ -94,6 +94,42 @@ Load the sample data so there is lineage to trace:
 datahub docker ingest-sample-data
 ```
 
+### 1b. Turn on real authentication (recommended)
+
+The quickstart ships with `METADATA_SERVICE_AUTH_ENABLED=false`, which is why
+`DATAHUB_GMS_TOKEN` can be left blank — the metadata service accepts anonymous
+calls. No real deployment runs that way. To make ContextCI authenticate the way it
+would in production, flip the flag on GMS and mint a token:
+
+```bash
+# 1. GMS with metadata auth on (state lives in MySQL/OpenSearch, so recreating GMS is safe)
+docker inspect datahub-datahub-gms-quickstart-1 > /tmp/gms.json   # keep its 74 env vars
+# recreate with METADATA_SERVICE_AUTH_ENABLED=true and the datahub-gms network alias
+
+# 2. Mint a personal access token straight into .env
+python scripts/make_datahub_token.py
+```
+
+`scripts/make_datahub_token.py` logs into the DataHub frontend, creates a
+`PERSONAL` access token via GraphQL, and writes it to `.env` as
+`DATAHUB_GMS_TOKEN`, replacing any existing or commented-out line. Options:
+`--frontend`, `--user`, `--password`, `--duration`, `--name`.
+
+Verify the token is genuinely required:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8081/api/graphql \
+  -H 'Content-Type: application/json' -d '{"query":"{ me { corpUser { username } } }"}'
+# 401 without a token; 200 with `Authorization: Bearer $DATAHUB_GMS_TOKEN`
+```
+
+Once the token is in `.env`, every read and every mutation ContextCI performs is
+authenticated — nothing else in the project changes.
+
+> The `datahub-gms` network alias matters: the frontend resolves GMS by that name,
+> and a recreated container that only carries `datahub-gms-quickstart` will make
+> login fail with `UnknownHostException: datahub-gms`.
+
 ### 2. Configure the repository
 
 Add these repository **secrets** (Settings → Secrets and variables → Actions):
@@ -254,7 +290,37 @@ a PR whose only content is `ALTER TABLE SampleHiveDataset DROP COLUMN field_foo;
 | Auto-fix | with `CONTEXTCI_AUTOFIX=true`, `fix(contextci): …` committed a compatibility view to the PR branch |
 | Graph write-back | `17/17` mutations; `Blast-Risk-High` from an earlier run **replaced** by `Blast-Risk-Critical`, not stacked |
 
-Three bugs surfaced here that no unit test would have caught, all fixed:
+### Through authenticated DataHub
+
+The same PR run with `METADATA_SERVICE_AUTH_ENABLED=true` and a real
+`DATAHUB_GMS_TOKEN`: anonymous GraphQL and OpenAPI both return **401**, the token
+resolves as `urn:li:corpuser:datahub`, and the run reads 13 downstream assets and
+applies all 17 mutations through the authenticated endpoint.
+
+### In GitHub Actions
+
+The workflow has run on PR #1 for real, not just locally
+([runs](https://github.com/LSUDOKO/ContextCI/actions)):
+
+```
+phase 1: 1 schema change(s) detected              ← diff read from the GitHub API
+phase 3: verdict from groq                        ← AI reasoning on the runner
+phase 4a: comment …#issuecomment-5225846936       ← posted by github-actions[bot]
+```
+
+**DataHub is unreachable from a GitHub-hosted runner** if it only exists on your
+laptop, and the run degrades to diff-only analysis with a banner saying so — which
+is the designed behaviour, not a failure. For full lineage in CI you need DataHub
+reachable from the runner: a hosted/cloud DataHub, a self-hosted runner on the
+same network, or a tunnel. Set `DATAHUB_MCP_URL` to that endpoint.
+
+Two CI-only bugs came out of this, both fixed: the workflow never forwarded
+`GROQ_API_KEY` (so CI silently ran rule-based), and an unset Actions `vars.X`
+interpolates to the *empty string*, which `os.getenv(name, default)` returns
+verbatim — Groq was being called with an empty model name. Config reads now use
+`os.getenv(x) or default` throughout.
+
+Three more bugs surfaced from the live reruns, all fixed:
 
 - Risk tags accumulated instead of replacing, so one asset carried
   `Blast-Risk-Critical`, `-Medium` and `-High` at once.
