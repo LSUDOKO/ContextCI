@@ -5,3 +5,14 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 contextci-report.json
+
+# Agent / IDE tooling — local developer config, not project source
+.agents/
+.claude/
+.cursor/
+.windsurf/
+.clinerules/
+.opencode/
+AGENTS.md
+.github/copilot-instructions.md
+skills-lock.json

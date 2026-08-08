@@ -376,25 +376,43 @@ dependency and an abstraction layer without removing a line of code.
 ## Development
 
 ```bash
+cp .env.example .env          # then fill in your keys
 pip install -r requirements-dev.txt
 pytest -q
 ```
 
-63 tests cover diff parsing across four dialects, the risk-escalation rules, the
-compliance gate, the DataHub write path (against a fake graph that records emitted
-aspects), local diff splitting, and comment rendering. No network, no DataHub, no
-Anthropic API.
+74 tests cover diff parsing across four dialects, the risk-escalation rules, the
+compliance gate, the rule floor, the DataHub write path (against a fake graph that
+records emitted aspects), local diff splitting, and comment rendering. No network,
+no DataHub, no LLM API.
+
+### Repository layout
 
 ```
-src/
-├── main.py                 # orchestrates the four phases; exits 1 on block
-├── models.py               # Pydantic contracts shared between phases
-├── diff_parser.py          # phase 1
-├── datahub_mcp_client.py   # phase 2 reads + phase 4 writes
-├── blast_analyzer.py       # phase 3 verdict (LLM + rule-based fallback)
-├── code_generator.py       # phase 3 migrations (prompt + templates)
-└── github_reporter.py      # phase 4 PR comment and auto-fix commits
+├── src/
+│   ├── main.py                 # orchestrates the four phases; exits 1 on block
+│   ├── models.py               # Pydantic contracts shared between phases
+│   ├── diff_parser.py          # phase 1 — parse the PR diff
+│   ├── datahub_mcp_client.py   # phase 2 reads + phase 4 writes
+│   ├── blast_analyzer.py       # phase 3 verdict (LLM + rule floor + compliance gate)
+│   ├── code_generator.py       # phase 3 migrations (prompt + templates)
+│   └── github_reporter.py      # phase 4 PR comment and auto-fix commits
+├── tests/                      # 74 tests, no network or external services
+├── examples/                   # sample diff, generated migration, real PR comment
+├── scripts/
+│   └── make_datahub_token.py   # mint a DataHub PAT into .env
+├── .github/workflows/
+│   └── contextci-gate.yml      # the GitHub Action
+├── .env.example                # every setting, documented
+├── TESTING.md                  # four-level manual test guide
+├── Dockerfile
+└── LICENSE                     # Apache 2.0
 ```
+
+Agent and IDE tooling (`.agents/`, `.cursor/`, `.claude/`, `.windsurf/`,
+`.clinerules/`, `.opencode/`, `AGENTS.md`) is local developer config and is
+gitignored — the DataHub Skills those directories vendor are installed as a
+plugin, not committed here.
 
 ---
 
