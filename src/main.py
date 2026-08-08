@@ -152,18 +152,99 @@ def _save_report(result: RunResult) -> None:
     logger.info("wrote %s", REPORT_PATH)
 
 
+def parse_diff_file(patch: str, fallback_name: str = "diff") -> List[SchemaChange]:
+    """Split a multi-file `git diff` into per-file patches and parse each one.
+
+    The GitHub API hands back one patch per file; a diff on disk concatenates
+    them behind `diff --git` / `+++ b/<path>` headers, so strip those first and
+    the rest of phase 1 is unchanged.
+    """
+    changes: List[SchemaChange] = []
+    current_file = fallback_name
+    buffer: List[str] = []
+
+    def flush():
+        if buffer:
+            changes.extend(parse_patch(current_file, "\n".join(buffer)))
+
+    for line in patch.splitlines():
+        if line.startswith("+++ b/"):
+            flush()
+            current_file, buffer = line[6:].strip(), []
+        elif line.startswith("diff --git") or line.startswith("--- "):
+            continue
+        else:
+            buffer.append(line)
+    flush()
+    return changes
+
+
+def run_local(diff_path: str) -> RunResult:
+    """Run phases 1-3 against a diff on disk — no GitHub, no graph writes.
+
+    This is how you exercise the gate against a real DataHub instance without
+    opening a pull request first: `python -m src.main --diff examples/breaking_change.diff`.
+    """
+    platform = os.getenv("DATAHUB_PLATFORM", "postgres")
+    env = os.getenv("DATAHUB_ENV", "PROD")
+    os.environ["TOOLS_IS_MUTATION_ENABLED"] = os.getenv("TOOLS_IS_MUTATION_ENABLED", "false")
+
+    with open(diff_path, encoding="utf-8") as handle:
+        changes = parse_diff_file(handle.read(), fallback_name=diff_path)
+
+    logger.info("phase 1: %d schema change(s) in %s", len(changes), diff_path)
+
+    result = RunResult()
+    client = DataHubMCPClient()
+    if not client.available:
+        result.degraded = True
+        result.degraded_reason = client.last_error or "DataHub connection unavailable"
+    try:
+        for change in changes:
+            context = client.build_lineage_context(change, platform=platform, env=env)
+            report = analyze(change, context)
+            result.verdicts.append(ChangeVerdict(change=change, context=context, report=report))
+            logger.info(
+                "phase 3: %s risk=%s action=%s",
+                change.identity, report.risk_level.value, report.recommended_action.value,
+            )
+    finally:
+        client.close()
+    return result
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(prog="contextci", description=__doc__)
+    parser.add_argument(
+        "--diff",
+        metavar="PATH",
+        help="Analyze a unified diff on disk and print the report instead of "
+             "reading a pull request. Graph writes are off unless you set "
+             "TOOLS_IS_MUTATION_ENABLED=true.",
+    )
+    args = parser.parse_args(argv)
+
     logging.basicConfig(
         level=os.getenv("CONTEXTCI_LOG_LEVEL", "INFO"),
         format="%(levelname)s %(name)s: %(message)s",
     )
+
+    if args.diff:
+        result = run_local(args.diff)
+        _save_report(result)
+        print()
+        print(render_comment(result, datahub_url=os.getenv("DATAHUB_FRONTEND_URL")))
+        print()
+        print(f"ContextCI verdict: {result.overall_action.value} (risk: {result.overall_risk.value})")
+        return 1 if result.overall_action is RecommendedAction.BLOCK else 0
 
     repo_full_name = os.getenv("GITHUB_REPOSITORY")
     pr_raw = os.getenv("PR_NUMBER")
     if not repo_full_name or not pr_raw:
         logger.error(
             "GITHUB_REPOSITORY and PR_NUMBER must be set "
-            "(the bundled workflow sets both from the pull_request event)"
+            "(the bundled workflow sets both from the pull_request event), "
+            "or pass --diff PATH to analyze a local diff"
         )
         return 2
 

@@ -1,0 +1,36 @@
+diff --git a/migrations/007_drop_customer_id.sql b/migrations/007_drop_customer_id.sql
+new file mode 100644
+--- /dev/null
++++ b/migrations/007_drop_customer_id.sql
+@@ -0,0 +1,6 @@
++-- Cleaning up a legacy column nobody uses any more (or so we thought).
++BEGIN;
++
++ALTER TABLE analytics.orders DROP COLUMN customer_id;
++
++COMMIT;
+diff --git a/migrations/008_rename_email.py b/migrations/008_rename_email.py
+new file mode 100644
+--- /dev/null
++++ b/migrations/008_rename_email.py
+@@ -0,0 +1,8 @@
++"""Alembic migration: clearer name for the contact column."""
++
++revision = "008"
++down_revision = "007"
++
++
++def upgrade():
++    op.alter_column('users', 'email', new_column_name='email_address')
+diff --git a/models/marts/dim_customers.yml b/models/marts/dim_customers.yml
+--- a/models/marts/dim_customers.yml
++++ b/models/marts/dim_customers.yml
+@@ -1,9 +1,8 @@
+ version: 2
+
+ models:
+   - name: dim_customers
+     columns:
+       - name: customer_key
+-      - name: legacy_signup_source
+       - name: created_at
