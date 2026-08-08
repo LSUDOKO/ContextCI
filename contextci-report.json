@@ -362,9 +362,9 @@
         "errors": []
       },
       "report": {
-        "is_breaking": false,
-        "risk_level": "medium",
-        "summary": "Dropping field_foo may break downstream assets that read it; column is used in queries but no confirmed lineage.",
+        "is_breaking": true,
+        "risk_level": "high",
+        "summary": "Dropping `field_foo` breaks downstream assets that query the column (e.g., SELECT * or SELECT field_foo, field_bar) despite lack of column\u2011level lineage.",
         "affected_assets": [
           {
             "urn": "urn:li:dataJob:(urn:li:dataFlow:(airflow,dag_abc,PROD),task_123)",
@@ -603,15 +603,15 @@
         ],
         "generated_fixes": [
           {
-            "file_path": "models/compat_SampleHiveDataset.sql",
+            "file_path": "models/compat/sample_hive_dataset_legacy.sql",
             "language": "sql",
-            "code": "CREATE OR REPLACE VIEW SampleHiveDataset_compat AS\nSELECT field_foo, field_bar FROM SampleHiveDataset;",
-            "description": "Create a compatibility view exposing field_foo so existing queries and downstream assets continue to work after column drop.",
+            "code": "/* Compatibility view for SampleHiveDataset before dropping field_foo */\n{{ config(materialized='view') }}\n\nSELECT\n  field_foo,\n  field_bar\nFROM {{ ref('SampleHiveDataset') }};",
+            "description": "Creates a compatibility view that retains `field_foo` while the column drop is staged, allowing downstream jobs to keep running.",
             "target_asset": "urn:li:dataset:(urn:li:dataPlatform:hive,SampleHiveDataset,PROD)"
           }
         ],
-        "recommended_action": "warn",
-        "reasoning": "Field_foo is queried directly (45 queries) and appears in representative SQL, but downstream lineage only shows table-level usage. Without column-level confirmation, risk is medium. No PII or critical tags present.",
+        "recommended_action": "block",
+        "reasoning": "Query logs show 45 queries explicitly referencing `field_foo`, and users run `SELECT *` against SampleHiveDataset, indicating the column is actively used. All 13 downstream assets have table\u2011level lineage, meaning they read the table and could fail if the column disappears. No PII or revenue\u2011critical tags are present, but the confirmed column usage elevates the risk to high.",
         "governance_gate": {
           "requires_security_review": false,
           "sensitive_terms": [],

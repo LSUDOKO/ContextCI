@@ -102,7 +102,8 @@ Add these repository **secrets** (Settings → Secrets and variables → Actions
 | --- | --- |
 | `DATAHUB_MCP_URL` | DataHub GMS endpoint, e.g. `http://localhost:8081` or `https://<instance>.acryl.io/gms` |
 | `DATAHUB_GMS_TOKEN` | DataHub personal access token (omit for an unauthenticated local quickstart) |
-| `ANTHROPIC_API_KEY` | Enables LLM analysis and code generation; without it ContextCI falls back to deterministic rules |
+| `ANTHROPIC_API_KEY` | Enables LLM analysis and code generation with Claude |
+| `GROQ_API_KEY` | Alternative provider. Used when no Anthropic key is set; without either, ContextCI falls back to deterministic rules |
 
 `GITHUB_TOKEN` is provided by Actions automatically.
 
@@ -175,6 +176,24 @@ docker run --rm --network host \
 
 ---
 
+## Reasoning providers
+
+| Provider | Env var | Default model | Notes |
+| --- | --- | --- | --- |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-opus-5` | Structured output via `messages.parse` |
+| Groq | `GROQ_API_KEY` | `openai/gpt-oss-120b` | Override with `CONTEXTCI_GROQ_MODEL` |
+| None | — | — | Deterministic rule-based analyzer |
+
+Anthropic wins when both keys are set. A provider failure is never fatal —
+ContextCI logs it and falls through to the rules.
+
+**Groq free-tier limit.** The free tier allows 8000 tokens per minute and counts
+`max_tokens` against that budget, so ContextCI asks Groq for 4000 rather than the
+16000 it asks Claude for. Raise it with `CONTEXTCI_GROQ_MAX_TOKENS` on a paid
+tier. Not every Groq model supports strict JSON schema (`openai/gpt-oss-120b`
+does, `llama-3.3-70b-versatile` does not); ContextCI detects the rejection and
+retries in JSON mode automatically.
+
 ## Verified end to end
 
 Run against a DataHub v1.7.0 quickstart (GMS on `:8081`, UI on `:9002`) loaded
@@ -203,10 +222,23 @@ note:             file:///…/live_demo.diff → "Pending …: drop column on `f
 Re-running holds at `17/17` with no duplicated tags and the note updated in
 place, not appended.
 
-**Not verified:** the LLM analysis path. No `ANTHROPIC_API_KEY` was available on
-this machine, so the run above exercised the deterministic rule-based analyzer.
-The LLM path is unit-tested at its boundaries but has not been exercised against
-the live API here.
+The **LLM path is verified too**, via Groq (`openai/gpt-oss-120b`) against the
+same catalog. Three consecutive runs were served by the model with no rate-limit
+failures. On this data it returns **medium / warn** where the rules return
+critical / block — a defensible disagreement: there are 13 downstream assets but
+DataHub confirms column-level lineage for none of them, and the model weighs that
+uncertainty rather than counting neighbours. Its summary and generated view:
+
+> Dropping `field_foo` may break downstream assets that read it; column is used
+> in queries but no confirmed lineage.
+
+```sql
+CREATE OR REPLACE VIEW SampleHiveDataset_compat AS
+SELECT field_foo, field_bar FROM SampleHiveDataset;
+```
+
+The Claude path has not been exercised against the live API here — no Anthropic
+key was available on this machine.
 
 **Quickstart gotchas hit on the way**, in case you hit them too:
 
