@@ -11,17 +11,48 @@ Built for the "Build with DataHub: The Agent Hackathon". Apache 2.0.
 uv venv --python 3.11 .venv
 uv pip install --python .venv/bin/python -r requirements-dev.txt
 
-.venv/bin/python -m pytest tests/ -q        # full suite, ~0.2s
+.venv/bin/python -m pytest tests/ -q        # full suite, ~0.6s, 63 tests
 .venv/bin/python -m src.main                # run the gate (needs the env vars below)
 
-# Local DataHub
-DATAHUB_MAPPED_GMS_PORT=8081 .venv/bin/datahub docker quickstart
-.venv/bin/datahub docker ingest-sample-data
+# Run against a diff on disk instead of a PR — no GitHub, writes off by default
+.venv/bin/python -m src.main --diff examples/breaking_change.diff
+
+# Against the live local catalog, with graph writes on
+DATAHUB_GMS_URL=http://localhost:8081 DATAHUB_PLATFORM=hive \
+TOOLS_IS_MUTATION_ENABLED=true .venv/bin/python -m src.main --diff /tmp/live_demo.diff
 ```
 
 Port 8080 is occupied on this machine by an Envio `generated-graphql-engine-1` container, so
 the local DataHub quickstart is mapped to **8081**. `~/.datahubenv` points at
 `http://localhost:8081` with an empty token (the quickstart is unauthenticated).
+
+### Bringing the local quickstart back up
+
+The stack is already built; do **not** re-run `datahub docker quickstart` — it aborts below
+13 GB of free Docker disk, and this machine sits near 98% full. Start the containers instead:
+
+```bash
+docker start datahub-mysql-1 datahub-kafka-broker-1 datahub-opensearch-1
+docker start datahub-system-update-quickstart-1        # must exit 0 before GMS will start
+docker start datahub-datahub-gms-quickstart-1 datahub-frontend-quickstart-1 \
+             datahub-datahub-actions-quickstart-1
+curl -s localhost:8081/config    # GMS ready
+```
+
+Two failure modes seen here, both disk-related:
+
+- `Timeout waiting for TCP mysql:3306` in system-update — the MySQL container is off
+  `datahub_network`. It publishes host port 3306, which is already taken on this machine, so
+  `docker network connect` fails. It was recreated without the host port publish; the data
+  lives in the `datahub_mysqldata` volume, so recreating it loses nothing.
+- `403 index_create_block_exception` at `BuildIndicesStep` — OpenSearch set a **persistent**
+  `cluster.blocks.create_index` at the disk flood watermark. Clear it with
+  `docker exec datahub-opensearch-1 curl -s -XPUT localhost:9200/_cluster/settings -H 'Content-Type: application/json' -d '{"persistent":{"cluster.blocks.create_index":null}}'`.
+
+Sample metadata: `datahub docker ingest-sample-data` refuses to run because the recreated
+MySQL container lost its compose labels. Ingest directly instead — download
+`metadata-ingestion/examples/mce_files/bootstrap_mce.json` from the DataHub repo and run a
+`file` source into a `datahub-rest` sink pointed at `http://localhost:8081`.
 
 ## Required environment
 
@@ -30,8 +61,10 @@ the local DataHub quickstart is mapped to **8081**. `~/.datahubenv` points at
 | `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, `PR_NUMBER` | Supplied by the Action; required locally |
 | `DATAHUB_MCP_URL` (or `DATAHUB_GMS_URL`) | GMS endpoint; the client degrades gracefully if unreachable |
 | `DATAHUB_GMS_TOKEN` | Optional for a local quickstart |
-| `ANTHROPIC_API_KEY` | Without it, the deterministic rule-based analyzer runs instead |
+| `ANTHROPIC_API_KEY` | Without it, the deterministic rule-based analyzer runs instead. No key is configured on this machine, so local runs exercise the rule path |
 | `CONTEXTCI_AUTOFIX`, `CONTEXTCI_MENTION_OWNERS` | Both default to `false` |
+| `TOOLS_IS_MUTATION_ENABLED` | Defaults to `true`; `--diff` runs force it to `false` unless set explicitly |
+| `DATAHUB_PLATFORM`, `DATAHUB_ENV` | Default `postgres`/`PROD`. The local sample data is `hive` |
 
 ## Architecture
 
@@ -61,6 +94,11 @@ adding a field; the rest follows.
 - **Only added diff lines count as DDL.** Deleting an old migration is not a schema change.
 - **Owner @-mentions stay opt-in.** DataHub owner names are not GitHub handles; guessing wrong
   pings a stranger on every PR.
+- **Never read ContextCI's own tags as signal.** `Blast-Risk-Critical` matches the `critical`
+  Tier-1 marker, so a second run would gate a change that was never regulated. `CONTEXTCI_TAGS`
+  in `blast_analyzer.py` is the exclusion list — extend it whenever a new write-back tag is added.
+- **The compliance gate only escalates.** It can force a block and raise risk to at least high;
+  it must never soften a critical verdict or downgrade an action.
 
 ## DataHub skills
 
