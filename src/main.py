@@ -114,6 +114,8 @@ def _write_back(
             risk_level=verdict.report.risk_level,
             note=note,
             pr_url=pr_url,
+            column_name=verdict.change.column or "",
+            requires_security_review=verdict.report.governance_gate.requires_security_review,
         )
         logger.info(
             "phase 4b: %d/%d DataHub mutations applied for %s",

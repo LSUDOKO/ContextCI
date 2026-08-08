@@ -35,6 +35,8 @@ from datahub.metadata.schema_classes import (
     AuditStampClass,
     DatasetProfileClass,
     DatasetUsageStatisticsClass,
+    EditableSchemaFieldInfoClass,
+    EditableSchemaMetadataClass,
     GlobalTagsClass,
     InstitutionalMemoryClass,
     InstitutionalMemoryMetadataClass,
@@ -526,9 +528,23 @@ class DataHubMCPClient:
 
     # ----------------------------------------------------------------- writes
 
+    def mutations_enabled(self) -> bool:
+        """Write-back is on by default and can be switched off for a dry run.
+
+        Mirrors the DataHub MCP Server's ``TOOLS_IS_MUTATION_ENABLED`` switch, so
+        the same variable turns graph writes off in both places.
+        """
+        raw = os.getenv("TOOLS_IS_MUTATION_ENABLED")
+        if raw is None:
+            return True
+        return raw.strip().lower() in ("1", "true", "yes", "on")
+
     def apply_tag(self, dataset_urn: str, tag_urn: str) -> bool:
         """Add a tag to a dataset. Idempotent: re-running never duplicates tags."""
         if not self.available or not self.graph:
+            return False
+        if not self.mutations_enabled():
+            logger.info("mutations disabled; would have tagged %s with %s", dataset_urn, tag_urn)
             return False
         try:
             current = self.graph.get_aspect(dataset_urn, GlobalTagsClass) or GlobalTagsClass(tags=[])
@@ -565,6 +581,48 @@ class DataHubMCPClient:
         except Exception as exc:  # noqa: BLE001
             logger.debug("could not create tag %s: %s", tag_urn, exc)
 
+    def apply_field_tag(self, dataset_urn: str, column_name: str, tag_urn: str) -> bool:
+        """Tag the specific column being changed, not just its table.
+
+        Written to ``editableSchemaMetadata`` so the tag survives the next
+        ingestion run, and shows up on the field row in the DataHub UI.
+        """
+        if not self.available or not self.graph or not column_name:
+            return False
+        if not self.mutations_enabled():
+            logger.info(
+                "mutations disabled; would have tagged %s.%s with %s",
+                dataset_urn, column_name, tag_urn,
+            )
+            return False
+        try:
+            current = self.graph.get_aspect(
+                dataset_urn, EditableSchemaMetadataClass
+            ) or EditableSchemaMetadataClass(editableSchemaFieldInfo=[])
+            fields = list(current.editableSchemaFieldInfo or [])
+
+            field = next((f for f in fields if f.fieldPath == column_name), None)
+            if field is None:
+                field = EditableSchemaFieldInfoClass(fieldPath=column_name)
+                fields.append(field)
+
+            tags = field.globalTags or GlobalTagsClass(tags=[])
+            if any(t.tag == tag_urn for t in tags.tags or []):
+                return True
+            self._ensure_tag_exists(tag_urn)
+            tags.tags = list(tags.tags or []) + [TagAssociationClass(tag=tag_urn)]
+            field.globalTags = tags
+
+            current.editableSchemaFieldInfo = fields
+            self.graph.emit_mcp(
+                MetadataChangeProposalWrapper(entityUrn=dataset_urn, aspect=current)
+            )
+            logger.info("tagged column %s.%s with %s", dataset_urn, column_name, tag_urn)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("apply_field_tag failed for %s.%s: %s", dataset_urn, column_name, exc)
+            return False
+
     def add_dataset_note(self, dataset_urn: str, note: str, url: Optional[str] = None) -> bool:
         """Attach a note about the pending change to the dataset.
 
@@ -573,6 +631,9 @@ class DataHubMCPClient:
         runs on the same PR idempotent.
         """
         if not self.available or not self.graph:
+            return False
+        if not self.mutations_enabled():
+            logger.info("mutations disabled; would have noted %s on %s", note[:60], dataset_urn)
             return False
         link = url or "https://github.com/contextci/pending-schema-change"
         try:
@@ -648,12 +709,32 @@ class DataHubMCPClient:
         risk_level: RiskLevel,
         note: str,
         pr_url: Optional[str] = None,
+        column_name: str = "",
+        requires_security_review: bool = False,
     ) -> Dict[str, bool]:
-        """Phase 4B: mutate the graph so DataHub records the in-flight change."""
+        """Phase 4B: mutate the graph so DataHub records the in-flight change.
+
+        The source dataset gets ``Schema-Change-Pending`` and ``PR-Under-Review``
+        so analysts browsing the catalog can see the structure is being changed
+        right now; the changed column gets the same pending tag at field level;
+        every breaking downstream asset gets ``Blast-Risk-{level}``; and a
+        regulated change additionally carries ``Security-Review-Required``.
+        """
         results: Dict[str, bool] = {}
-        results[f"tag:{source_urn}"] = self.apply_tag(
-            source_urn, make_tag_urn("Schema-Change-Pending")
+        pending = make_tag_urn("Schema-Change-Pending")
+
+        results[f"tag:{source_urn}:pending"] = self.apply_tag(source_urn, pending)
+        results[f"tag:{source_urn}:review"] = self.apply_tag(
+            source_urn, make_tag_urn("PR-Under-Review")
         )
+        if requires_security_review:
+            results[f"tag:{source_urn}:security"] = self.apply_tag(
+                source_urn, make_tag_urn("Security-Review-Required")
+            )
+        if column_name:
+            results[f"field:{source_urn}:{column_name}"] = self.apply_field_tag(
+                source_urn, column_name, pending
+            )
         results[f"note:{source_urn}"] = self.add_dataset_note(source_urn, note, url=pr_url)
 
         risk_tag = make_tag_urn(f"Blast-Risk-{risk_level.value.capitalize()}")
