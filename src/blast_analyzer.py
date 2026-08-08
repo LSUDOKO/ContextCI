@@ -311,12 +311,17 @@ def _apply_floor(report: BlastReport, baseline: BlastReport) -> BlastReport:
     supplies the reasoning, the summary and the migration, and may escalate, but
     the action and risk never fall below what the rules alone would have said.
     """
-    if _RISK_ORDER.index(report.risk_level) < _RISK_ORDER.index(baseline.risk_level):
+    raised = _RISK_ORDER.index(report.risk_level) < _RISK_ORDER.index(baseline.risk_level)
+    if raised:
         logger.info(
             "model said %s, rules said %s — holding at the rule floor",
             report.risk_level.value, baseline.risk_level.value,
         )
         report.risk_level = baseline.risk_level
+        # The model under-called the severity, so its per-asset judgement is not
+        # trustworthy either — a critical verdict with nothing marked downstream
+        # would tag the source and leave the blast radius unflagged.
+        report.affected_assets = baseline.affected_assets
     if _ACTION_ORDER.index(report.recommended_action) < _ACTION_ORDER.index(
         baseline.recommended_action
     ):
