@@ -163,9 +163,7 @@ def _render_verdict(verdict: ChangeVerdict, datahub_url: Optional[str]) -> List[
         for asset in report.affected_assets:
             owners = ", ".join(o.name for o in asset.owners) or "—"
             terms = ", ".join(asset.glossary_terms) or "—"
-            name = asset.name
-            if datahub_url:
-                name = f"[{asset.name}]({datahub_url.rstrip('/')}/dataset/{asset.urn})"
+            name = _asset_link(asset, datahub_url)
             lines.append(
                 f"| {name} | {asset.type} "
                 f"| {'✅ confirmed' if asset.column_level_confirmed else '⚠️ table-level only'} "
@@ -198,6 +196,31 @@ def _render_verdict(verdict: ChangeVerdict, datahub_url: Optional[str]) -> List[
         lines += ["", "</details>", ""]
 
     return lines
+
+
+# DataHub's UI route differs per entity type; a dataJob is not at /dataset/.
+_UI_ROUTES = {
+    "dataset": "dataset",
+    "dashboard": "dashboard",
+    "chart": "chart",
+    "mlmodel": "mlModel",
+    "mlfeature": "mlFeature",
+    "mlprimary_key": "mlPrimaryKey",
+    "datajob": "tasks",
+    "dataflow": "pipelines",
+}
+
+
+def _asset_link(asset, datahub_url: Optional[str]) -> str:
+    """Link an asset to its DataHub page, or leave it as plain text.
+
+    An unknown entity type gets no link rather than a wrong one — a 404 in a PR
+    comment is worse than no hyperlink.
+    """
+    route = _UI_ROUTES.get(asset.type.lower())
+    if not datahub_url or not route:
+        return asset.name
+    return f"[{asset.name}]({datahub_url.rstrip('/')}/{route}/{asset.urn})"
 
 
 def _collect_owners(result: RunResult) -> List[Owner]:

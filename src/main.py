@@ -30,6 +30,24 @@ logger = logging.getLogger("contextci")
 REPORT_PATH = "contextci-report.json"
 
 
+def load_dotenv(path: str = ".env") -> None:
+    """Load `KEY=value` lines from a .env file without adding a dependency.
+
+    Real environment variables always win, so CI secrets are never shadowed by a
+    stray local file.
+    """
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+    logger.debug("loaded %s", path)
+
+
 def _env_flag(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -231,6 +249,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    load_dotenv()
     logging.basicConfig(
         level=os.getenv("CONTEXTCI_LOG_LEVEL", "INFO"),
         format="%(levelname)s %(name)s: %(message)s",

@@ -8,6 +8,7 @@ a usable answer instead of crashing the build.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import List, Optional
@@ -29,8 +30,15 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-MODEL = os.getenv("CONTEXTCI_MODEL", "claude-opus-5")
+# Two providers are supported. Whichever key is present wins; Anthropic first
+# when both are set. Neither present means the rule-based analyzer runs.
+ANTHROPIC_MODEL = os.getenv("CONTEXTCI_MODEL", "claude-opus-5")
+GROQ_MODEL = os.getenv("CONTEXTCI_GROQ_MODEL", "openai/gpt-oss-120b")
 MAX_TOKENS = 16000
+# Groq counts `max_tokens` against the per-minute token budget, and the free tier
+# allows 8000 TPM — a 16000-token ceiling makes every request a 413 before the
+# model even runs. A verdict plus a migration fits comfortably in this.
+GROQ_MAX_TOKENS = int(os.getenv("CONTEXTCI_GROQ_MAX_TOKENS", "4000"))
 
 SYSTEM_PROMPT = """\
 You are ContextCI, a data reliability engineer reviewing a schema change in a pull request.
@@ -262,31 +270,48 @@ def _apply_gate(report: BlastReport, gate: GovernanceGate) -> BlastReport:
     return report
 
 
+def active_provider() -> Optional[str]:
+    """Which LLM provider this run will use, if any."""
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    if os.getenv("GROQ_API_KEY"):
+        return "groq"
+    return None
+
+
 def analyze(change: SchemaChange, context: LineageContext) -> BlastReport:
     """Produce a blast report for one schema change."""
     gate = evaluate_governance_gate(change, context)
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if api_key:
-        report = _analyze_with_llm(change, context)
-        if report:
-            return _apply_gate(report, gate)
+    provider = active_provider()
+    if provider:
+        verdict = (
+            _verdict_from_anthropic(change, context)
+            if provider == "anthropic"
+            else _verdict_from_groq(change, context)
+        )
+        if verdict:
+            logger.info("phase 3: verdict from %s", provider)
+            return _apply_gate(_report_from_verdict(verdict, context, change), gate)
         logger.warning("falling back to rule-based analysis for %s", change.identity)
     else:
-        logger.info("ANTHROPIC_API_KEY not set; using rule-based analysis")
+        logger.info(
+            "no ANTHROPIC_API_KEY or GROQ_API_KEY set; using rule-based analysis"
+        )
     return _apply_gate(_analyze_with_rules(change, context), gate)
 
 
-def _analyze_with_llm(change: SchemaChange, context: LineageContext) -> Optional[BlastReport]:
+def _verdict_from_anthropic(
+    change: SchemaChange, context: LineageContext
+) -> Optional[_LLMVerdict]:
     try:
         import anthropic
     except ImportError:
-        logger.warning("anthropic SDK not installed; using rule-based analysis")
+        logger.warning("anthropic SDK not installed")
         return None
-
     try:
         client = anthropic.Anthropic()
         response = client.messages.parse(
-            model=MODEL,
+            model=ANTHROPIC_MODEL,
             max_tokens=MAX_TOKENS,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": _render_context(change, context)}],
@@ -295,14 +320,68 @@ def _analyze_with_llm(change: SchemaChange, context: LineageContext) -> Optional
         if response.stop_reason == "refusal":
             logger.warning("model declined to analyze %s", change.identity)
             return None
-        verdict = response.parsed_output
+        return response.parsed_output
     except Exception as exc:  # noqa: BLE001 - never fail the build on the LLM
-        logger.warning("LLM analysis failed for %s: %s", change.identity, exc)
+        logger.warning("Anthropic analysis failed for %s: %s", change.identity, exc)
         return None
 
-    if verdict is None:
+
+def _verdict_from_groq(change: SchemaChange, context: LineageContext) -> Optional[_LLMVerdict]:
+    """Groq path, using strict JSON-schema output where the model supports it.
+
+    Not every Groq model accepts `json_schema` (llama-3.3-70b does not), so a
+    rejection falls back to plain JSON mode with the schema inlined in the
+    prompt. Either way the result is validated against the same Pydantic model,
+    so a malformed reply degrades to the rule-based analyzer rather than
+    reaching the pull request.
+    """
+    try:
+        import groq
+    except ImportError:
+        logger.warning("groq SDK not installed")
         return None
 
+    schema = _LLMVerdict.model_json_schema()
+    prompt = _render_context(change, context)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+
+    try:
+        client = groq.Groq()
+        try:
+            response = client.chat.completions.create(
+                model=GROQ_MODEL,
+                max_tokens=GROQ_MAX_TOKENS,
+                messages=messages,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {"name": "blast_verdict", "schema": schema},
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - model may not support json_schema
+            logger.info("%s rejected json_schema (%s); retrying in JSON mode", GROQ_MODEL, exc)
+            messages[1]["content"] = (
+                f"{prompt}\n\nRespond with JSON matching this schema exactly:\n"
+                f"{json.dumps(schema)}"
+            )
+            response = client.chat.completions.create(
+                model=GROQ_MODEL,
+                max_tokens=GROQ_MAX_TOKENS,
+                messages=messages,
+                response_format={"type": "json_object"},
+            )
+        return _LLMVerdict.model_validate_json(response.choices[0].message.content)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Groq analysis failed for %s: %s", change.identity, exc)
+        return None
+
+
+def _report_from_verdict(
+    verdict: _LLMVerdict, context: LineageContext, change: SchemaChange
+) -> BlastReport:
+    """Merge the model's judgement with the asset details DataHub already gave us."""
     breaking = set(verdict.breaking_asset_urns)
     affected = [
         _with_risk(asset, verdict.risk_level if asset.urn in breaking else RiskLevel.LOW)

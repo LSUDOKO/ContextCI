@@ -131,7 +131,8 @@
             ],
             "glossary_terms": [],
             "tags": [
-              "Blast-Risk-Critical"
+              "Blast-Risk-Critical",
+              "Blast-Risk-Medium"
             ],
             "degree": 2,
             "column_level_confirmed": false,
@@ -158,7 +159,8 @@
             ],
             "glossary_terms": [],
             "tags": [
-              "Blast-Risk-Critical"
+              "Blast-Risk-Critical",
+              "Blast-Risk-Medium"
             ],
             "degree": 2,
             "column_level_confirmed": false,
@@ -185,7 +187,8 @@
             ],
             "glossary_terms": [],
             "tags": [
-              "Blast-Risk-Critical"
+              "Blast-Risk-Critical",
+              "Blast-Risk-Medium"
             ],
             "degree": 1,
             "column_level_confirmed": false,
@@ -212,7 +215,8 @@
             ],
             "glossary_terms": [],
             "tags": [
-              "Blast-Risk-Critical"
+              "Blast-Risk-Critical",
+              "Blast-Risk-Medium"
             ],
             "degree": 2,
             "column_level_confirmed": false,
@@ -358,9 +362,9 @@
         "errors": []
       },
       "report": {
-        "is_breaking": true,
-        "risk_level": "critical",
-        "summary": "Drop column on `SampleHiveDataset.field_foo` affects 13 downstream asset(s), 0 of which DataHub confirms read this column.",
+        "is_breaking": false,
+        "risk_level": "medium",
+        "summary": "Dropping field_foo may break downstream assets that read it; column is used in queries but no confirmed lineage.",
         "affected_assets": [
           {
             "urn": "urn:li:dataJob:(urn:li:dataFlow:(airflow,dag_abc,PROD),task_123)",
@@ -379,7 +383,7 @@
             "tags": [],
             "degree": 2,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:dataJob:(urn:li:dataFlow:(airflow,dag_abc,PROD),task_456)",
@@ -398,7 +402,7 @@
             "tags": [],
             "degree": 2,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,fct_users_created,PROD)",
@@ -421,11 +425,12 @@
             ],
             "glossary_terms": [],
             "tags": [
-              "Blast-Risk-Critical"
+              "Blast-Risk-Critical",
+              "Blast-Risk-Medium"
             ],
             "degree": 2,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,fct_users_deleted,PROD)",
@@ -448,11 +453,12 @@
             ],
             "glossary_terms": [],
             "tags": [
-              "Blast-Risk-Critical"
+              "Blast-Risk-Critical",
+              "Blast-Risk-Medium"
             ],
             "degree": 2,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,logging_events,PROD)",
@@ -475,11 +481,12 @@
             ],
             "glossary_terms": [],
             "tags": [
-              "Blast-Risk-Critical"
+              "Blast-Risk-Critical",
+              "Blast-Risk-Medium"
             ],
             "degree": 1,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,project/root/events/logging_events_bckp,PROD)",
@@ -502,11 +509,12 @@
             ],
             "glossary_terms": [],
             "tags": [
-              "Blast-Risk-Critical"
+              "Blast-Risk-Critical",
+              "Blast-Risk-Medium"
             ],
             "degree": 2,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:mlFeature:(user_analytics,date_joined)",
@@ -518,7 +526,7 @@
             "tags": [],
             "degree": 3,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:mlFeature:(user_features,is_premium_user)",
@@ -530,7 +538,7 @@
             "tags": [],
             "degree": 3,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:mlFeature:(user_features,number_of_visits)",
@@ -542,7 +550,7 @@
             "tags": [],
             "degree": 3,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:mlFeature:(user_features,regions)",
@@ -554,7 +562,7 @@
             "tags": [],
             "degree": 3,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:mlPrimaryKey:(user_analytics,user_name)",
@@ -566,7 +574,7 @@
             "tags": [],
             "degree": 3,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:mlPrimaryKey:(user_features,user_id)",
@@ -578,7 +586,7 @@
             "tags": [],
             "degree": 3,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           },
           {
             "urn": "urn:li:mlPrimaryKey:(user_features,user_name)",
@@ -590,20 +598,20 @@
             "tags": [],
             "degree": 3,
             "column_level_confirmed": false,
-            "risk": "critical"
+            "risk": "low"
           }
         ],
         "generated_fixes": [
           {
-            "file_path": "migrations/compat_SampleHiveDataset_field_foo.sql",
+            "file_path": "models/compat_SampleHiveDataset.sql",
             "language": "sql",
-            "code": "-- ContextCI: staged removal of SampleHiveDataset.field_foo\n-- Step 1 (this PR): expose a compatibility view so downstream readers keep working.\nCREATE OR REPLACE VIEW SampleHiveDataset_compat AS\nSELECT\n    *,\n    NULL AS field_foo  -- deprecated, removal scheduled\nFROM SampleHiveDataset;\n\n-- Step 2 (follow-up release, after downstream owners migrate):\n-- ALTER TABLE SampleHiveDataset DROP COLUMN field_foo;\n-- DROP VIEW SampleHiveDataset_compat;\n",
-            "description": "Compatibility view keeping `field_foo` readable for User Creations, User Deletions, fct_users_created, fct_users_deleted, logging_events while they migrate. Drop the column in a follow-up release.",
+            "code": "CREATE OR REPLACE VIEW SampleHiveDataset_compat AS\nSELECT field_foo, field_bar FROM SampleHiveDataset;",
+            "description": "Create a compatibility view exposing field_foo so existing queries and downstream assets continue to work after column drop.",
             "target_asset": "urn:li:dataset:(urn:li:dataPlatform:hive,SampleHiveDataset,PROD)"
           }
         ],
-        "recommended_action": "block",
-        "reasoning": "Rule-based analysis (no LLM available): risk scaled by downstream count, column-level confirmation, asset type and governance terms.",
+        "recommended_action": "warn",
+        "reasoning": "Field_foo is queried directly (45 queries) and appears in representative SQL, but downstream lineage only shows table-level usage. Without column-level confirmation, risk is medium. No PII or critical tags present.",
         "governance_gate": {
           "requires_security_review": false,
           "sensitive_terms": [],

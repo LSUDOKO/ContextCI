@@ -106,3 +106,27 @@ def test_no_changes_renders_a_clean_message():
 def test_datahub_links_are_added_when_configured():
     body = render_comment(RunResult(verdicts=[_verdict()]), datahub_url="http://localhost:9002")
     assert "http://localhost:9002/dataset/urn:li:dataset:" in body
+
+
+def test_each_entity_type_links_to_its_own_ui_route():
+    """A dataJob does not live under /dataset/; a wrong link 404s in the PR."""
+    from src.github_reporter import _asset_link
+    from src.models import AffectedAsset
+
+    cases = {
+        "dataset": "/dataset/",
+        "dataJob": "/tasks/",
+        "mlFeature": "/mlFeature/",
+        "dashboard": "/dashboard/",
+    }
+    for entity_type, route in cases.items():
+        asset = AffectedAsset(urn=f"urn:li:{entity_type}:x", name="x", type=entity_type)
+        assert route in _asset_link(asset, "http://localhost:9002")
+
+
+def test_unknown_entity_type_is_left_unlinked():
+    from src.github_reporter import _asset_link
+    from src.models import AffectedAsset
+
+    asset = AffectedAsset(urn="urn:li:glossaryNode:x", name="x", type="glossaryNode")
+    assert _asset_link(asset, "http://localhost:9002") == "x"
