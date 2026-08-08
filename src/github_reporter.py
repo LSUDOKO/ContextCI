@@ -78,6 +78,18 @@ def render_comment(result: RunResult, datahub_url: Optional[str] = None) -> str:
         "",
     ]
 
+    gated = [v for v in result.verdicts if v.report.governance_gate.requires_security_review]
+    if gated:
+        lines += [
+            "> 🛡️ **Security review required.** This pull request touches regulated or Tier-1 data. "
+            "It stays blocked until a data governance owner signs off, independent of the blast radius.",
+            "",
+        ]
+        for verdict in gated:
+            for reason in verdict.report.governance_gate.reasons:
+                lines.append(f"> - {reason}")
+        lines.append("")
+
     lines += _render_summary_table(result)
     lines.append("")
 

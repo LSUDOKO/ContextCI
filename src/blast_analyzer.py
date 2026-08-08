@@ -20,6 +20,7 @@ from .models import (
     BlastReport,
     ChangeType,
     GeneratedFix,
+    GovernanceGate,
     LineageContext,
     RecommendedAction,
     RiskLevel,
@@ -55,6 +56,11 @@ consumers, or a dashboard/ML model), critical (confirmed consumers carrying PII
 or revenue-critical terms, or a dropped table with live readers).
 
 Recommended action: block for high and critical, warn for medium, approve for low.
+
+A separate compliance gate runs after you: if the column or anything downstream
+carries a PII, GDPR, PHI or Tier-1 marker, the change is blocked for security
+review regardless of your verdict. Judge the engineering blast radius; you do not
+need to enforce that rule yourself, but do call out regulated data in your summary.
 
 """ + FIX_GUIDANCE
 
@@ -158,17 +164,103 @@ def _render_context(change: SchemaChange, context: LineageContext) -> str:
     return "\n".join(lines)
 
 
+# Terms and tags that make a destructive change a compliance question, not just
+# an engineering one. Matched case-insensitively as substrings so "GDPR-Sensitive"
+# and "pii_email" both hit.
+SENSITIVE_MARKERS = (
+    "pii", "gdpr", "phi", "hipaa", "pci", "sensitive", "confidential", "personal-data",
+)
+TIER1_MARKERS = ("tier1", "tier-1", "tier_1", "critical", "regulated", "sox")
+
+DESTRUCTIVE = (
+    ChangeType.DROP_COLUMN,
+    ChangeType.RENAME_COLUMN,
+    ChangeType.MODIFY_COLUMN,
+    ChangeType.DROP_TABLE,
+    ChangeType.RENAME_TABLE,
+)
+
+
+def _matches(labels, markers) -> List[str]:
+    hits = []
+    for label in labels:
+        low = label.lower().replace(" ", "-")
+        if any(marker in low for marker in markers):
+            hits.append(label)
+    return hits
+
+
+def evaluate_governance_gate(change: SchemaChange, context: LineageContext) -> GovernanceGate:
+    """Decide whether this change needs human sign-off before it can merge.
+
+    Dropping a column that carries a PII glossary term, or one feeding a Tier-1
+    asset, is a compliance decision. ContextCI does not let the risk heuristics
+    wave that through — the gate forces a block regardless of downstream count.
+    """
+    gate = GovernanceGate()
+    if change.change_type not in DESTRUCTIVE:
+        return gate
+
+    source_labels: List[str] = []
+    if context.governance:
+        source_labels = list(context.governance.glossary_terms) + list(context.governance.tags)
+
+    sensitive = _matches(source_labels, SENSITIVE_MARKERS)
+    tier1_assets: List[str] = []
+    if _matches(source_labels, TIER1_MARKERS):
+        tier1_assets.append(context.governance.urn if context.governance else change.table)
+
+    for asset in context.downstream:
+        labels = list(asset.glossary_terms) + list(asset.tags)
+        asset_sensitive = _matches(labels, SENSITIVE_MARKERS)
+        if asset_sensitive:
+            sensitive.extend(asset_sensitive)
+        if _matches(labels, TIER1_MARKERS):
+            tier1_assets.append(asset.name)
+
+    gate.sensitive_terms = sorted(set(sensitive))
+    gate.tier1_assets = sorted(set(tier1_assets))
+
+    verb = change.change_type.value.replace("_", " ")
+    target = f"{change.table}.{change.column}" if change.column else change.table
+    if gate.sensitive_terms:
+        gate.reasons.append(
+            f"`{target}` or an asset downstream of it carries "
+            f"{', '.join(gate.sensitive_terms)}; a {verb} on regulated data needs security sign-off."
+        )
+    if gate.tier1_assets:
+        gate.reasons.append(
+            f"Tier-1 asset(s) affected: {', '.join(gate.tier1_assets)}. "
+            "Tier-1 assets require an approved change record before a schema change merges."
+        )
+    gate.requires_security_review = bool(gate.reasons)
+    return gate
+
+
+def _apply_gate(report: BlastReport, gate: GovernanceGate) -> BlastReport:
+    """A governance gate overrides a softer verdict — never the other way round."""
+    report.governance_gate = gate
+    if not gate.requires_security_review:
+        return report
+    report.recommended_action = RecommendedAction.BLOCK
+    if _RISK_ORDER.index(report.risk_level) < _RISK_ORDER.index(RiskLevel.HIGH):
+        report.risk_level = RiskLevel.HIGH
+    report.reasoning = " ".join(filter(None, [report.reasoning, *gate.reasons]))
+    return report
+
+
 def analyze(change: SchemaChange, context: LineageContext) -> BlastReport:
     """Produce a blast report for one schema change."""
+    gate = evaluate_governance_gate(change, context)
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if api_key:
         report = _analyze_with_llm(change, context)
         if report:
-            return report
+            return _apply_gate(report, gate)
         logger.warning("falling back to rule-based analysis for %s", change.identity)
     else:
         logger.info("ANTHROPIC_API_KEY not set; using rule-based analysis")
-    return _analyze_with_rules(change, context)
+    return _apply_gate(_analyze_with_rules(change, context), gate)
 
 
 def _analyze_with_llm(change: SchemaChange, context: LineageContext) -> Optional[BlastReport]:
@@ -228,7 +320,9 @@ def _analyze_with_llm(change: SchemaChange, context: LineageContext) -> Optional
 
 
 _RISK_ORDER = [RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH, RiskLevel.CRITICAL]
-_SENSITIVE_TERMS = {"pii", "gdpr", "gdpr-sensitive", "revenue-critical", "phi", "sensitive"}
+# Escalation markers are broader than the compliance gate: revenue-critical raises
+# risk but is an engineering call, not a security review.
+_ESCALATING_MARKERS = SENSITIVE_MARKERS + TIER1_MARKERS + ("revenue-critical", "revenue")
 _LOUD_FAILURE_TYPES = {"dashboard", "chart", "mlmodel"}
 
 
@@ -297,9 +391,10 @@ def _analyze_with_rules(change: SchemaChange, context: LineageContext) -> BlastR
     if any(a.type in _LOUD_FAILURE_TYPES for a in relevant):
         risk = _escalate(risk)
 
-    terms = {t.lower() for a in relevant for t in a.glossary_terms}
-    terms |= {t.lower() for t in (context.governance.glossary_terms if context.governance else [])}
-    if terms & _SENSITIVE_TERMS:
+    labels = [t for a in relevant for t in a.glossary_terms + a.tags]
+    if context.governance:
+        labels += context.governance.glossary_terms + context.governance.tags
+    if _matches(labels, _ESCALATING_MARKERS):
         risk = _escalate(risk)
 
     if change.change_type is ChangeType.DROP_TABLE:
