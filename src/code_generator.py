@@ -31,6 +31,11 @@ old readers working through a deprecation window:
   safe; narrowing is not. For narrowing, emit a backfill + validation query.
 - Every fix must be runnable SQL or a complete dbt model file, not a sketch.
 - Reference the real downstream asset names from the lineage context.
+- Ground the migration in the query history when it is present: match the joins,
+  filters and aliases people actually use rather than inventing a shape. If the
+  usage stats show the column is heavily queried, say so in the fix description.
+- Use the dataset profile for sizing: a backfill on a table with millions of rows
+  needs batching; on an empty table it does not.
 """
 
 

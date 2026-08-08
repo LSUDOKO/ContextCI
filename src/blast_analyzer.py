@@ -113,6 +113,31 @@ def _render_context(change: SchemaChange, context: LineageContext) -> str:
         if gov.columns:
             lines.append(f"- columns: {', '.join(gov.columns[:40])}")
 
+    profile = context.profile
+    if profile and (profile.row_count is not None or profile.column_count is not None):
+        lines.append("\n## Dataset profile")
+        lines.append(f"- rows: {profile.row_count if profile.row_count is not None else 'unknown'}")
+        lines.append(f"- columns: {profile.column_count if profile.column_count is not None else 'unknown'}")
+        if profile.size_in_bytes is not None:
+            lines.append(f"- size: {profile.size_in_bytes} bytes")
+        if profile.column_null_fraction is not None:
+            lines.append(f"- `{change.column}` null fraction: {profile.column_null_fraction:.3f}")
+        if profile.column_distinct_count is not None:
+            lines.append(f"- `{change.column}` distinct values: {profile.column_distinct_count}")
+
+    usage = context.usage
+    if usage and (usage.total_queries or usage.top_queries):
+        lines.append("\n## Query history (from DataHub usage stats)")
+        lines.append(f"- total queries in window: {usage.total_queries}")
+        lines.append(f"- unique users: {usage.unique_users}")
+        if usage.column_query_count is not None:
+            lines.append(f"- queries touching `{change.column}`: {usage.column_query_count}")
+        if usage.top_queries:
+            lines.append("- representative SQL people actually run against this table:")
+            for query in usage.top_queries:
+                collapsed = " ".join(query.split())
+                lines.append(f"  ```sql\n  {collapsed[:800]}\n  ```")
+
     lines.append(f"\n## Downstream assets ({len(context.downstream)})")
     if not context.downstream:
         lines.append("- none recorded in DataHub")

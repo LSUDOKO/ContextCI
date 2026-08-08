@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "skills": {
+    "datahub-connector-planning": {
+      "source": "datahub-project/datahub-skills",
+      "sourceType": "github",
+      "skillPath": "skills/datahub-connector-planning/SKILL.md",
+      "computedHash": "639e84a63c2260e9628f5a1d815717c718c9700879fef4d150cd2aaad64e451a"
+    },
+    "datahub-connector-pr-review": {
+      "source": "datahub-project/datahub-skills",
+      "sourceType": "github",
+      "skillPath": "skills/datahub-connector-pr-review/SKILL.md",
+      "computedHash": "def7a3bf2a9ea9ecf70c7f30301e01982e7b9fd0645a2e84ed9432b36c4dde84"
+    },
+    "datahub-enrich": {
+      "source": "datahub-project/datahub-skills",
+      "sourceType": "github",
+      "skillPath": "skills/datahub-enrich/SKILL.md",
+      "computedHash": "bc172288af8ae330e3070f152f6781bd5d05fe6787f0fc729db0a58d71f6f49a"
+    },
+    "datahub-lineage": {
+      "source": "datahub-project/datahub-skills",
+      "sourceType": "github",
+      "skillPath": "skills/datahub-lineage/SKILL.md",
+      "computedHash": "63ebb7132a00ac21665a4cc17537ea6381aa87dffb31d1b3d9ef72b12578a21b"
+    },
+    "datahub-mfe-configure-app": {
+      "source": "datahub-project/datahub-skills",
+      "sourceType": "github",
+      "skillPath": "skills/datahub-mfe-configure-app/SKILL.md",
+      "computedHash": "d49c196538180ed3585c710150d19bd68a25d9990fd7031dc4d0bb677469eca6"
+    },
+    "datahub-mfe-create-app": {
+      "source": "datahub-project/datahub-skills",
+      "sourceType": "github",
+      "skillPath": "skills/datahub-mfe-create-app/SKILL.md",
+      "computedHash": "6123e996c07bc5b7e14063ac1308d8ab12edece3fea7a91659a847cc101f5a1c"
+    },
+    "datahub-quality": {
+      "source": "datahub-project/datahub-skills",
+      "sourceType": "github",
+      "skillPath": "skills/datahub-quality/SKILL.md",
+      "computedHash": "62e8717dd429eef8195bd9bcdc37e3c5d54de25f31f5ab4c80d76622e502678e"
+    },
+    "datahub-search": {
+      "source": "datahub-project/datahub-skills",
+      "sourceType": "github",
+      "skillPath": "skills/datahub-search/SKILL.md",
+      "computedHash": "063d5edd907e0e2cd289b1d6895f5b4bad672f5d068cb94d45af22f235d241d4"
+    },
+    "datahub-setup": {
+      "source": "datahub-project/datahub-skills",
+      "sourceType": "github",
+      "skillPath": "skills/datahub-setup/SKILL.md",
+      "computedHash": "bf1cf65987147a6513ccf5b9294422b8a54136f99e4e52f05c06308a69bf2b36"
+    },
+    "load-standards": {
+      "source": "datahub-project/datahub-skills",
+      "sourceType": "github",
+      "skillPath": "skills/load-standards/SKILL.md",
+      "computedHash": "f66b910201affd0884e76cec5dfcd0285338b06517371b95bc39562f1a08f3c0"
+    },
+    "using-datahub": {
+      "source": "datahub-project/datahub-skills",
+      "sourceType": "github",
+      "skillPath": "skills/using-datahub/SKILL.md",
+      "computedHash": "a0dc41438caf5b1f88a12317f15f431c161f55bcabecf7f85e6a46db1594190d"
+    }
+  }
+}

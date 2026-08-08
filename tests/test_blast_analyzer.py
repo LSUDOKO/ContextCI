@@ -2,15 +2,17 @@
 
 import pytest
 
-from src.blast_analyzer import _analyze_with_rules
+from src.blast_analyzer import _analyze_with_rules, _render_context
 from src.models import (
     AffectedAsset,
     ChangeType,
     DatasetGovernance,
+    DatasetProfile,
     LineageContext,
     RecommendedAction,
     RiskLevel,
     SchemaChange,
+    UsageStats,
 )
 
 
@@ -119,6 +121,31 @@ def test_confirmed_downstream_narrows_the_relevant_set():
     report = _analyze_with_rules(change, _context(change, downstream=downstream))
     # One confirmed consumer -> medium, escalated once for confirmation -> high.
     assert report.risk_level is RiskLevel.HIGH
+
+
+def test_prompt_carries_profile_and_query_history():
+    """The model must see real usage, not just the schema."""
+    change = _change()
+    ctx = _context(change, downstream=[_asset("dbt_a", confirmed=True)])
+    ctx.profile = DatasetProfile(row_count=4_200_000, column_count=18, column_null_fraction=0.02)
+    ctx.usage = UsageStats(
+        total_queries=931,
+        unique_users=17,
+        column_query_count=604,
+        top_queries=["SELECT customer_id, SUM(total)\n  FROM analytics.orders GROUP BY 1"],
+    )
+    prompt = _render_context(change, ctx)
+    assert "rows: 4200000" in prompt
+    assert "queries touching `customer_id`: 604" in prompt
+    assert "SELECT customer_id, SUM(total) FROM analytics.orders GROUP BY 1" in prompt
+    assert "null fraction: 0.020" in prompt
+
+
+def test_prompt_omits_profile_sections_when_datahub_has_none():
+    change = _change()
+    prompt = _render_context(change, _context(change))
+    assert "Dataset profile" not in prompt
+    assert "Query history" not in prompt
 
 
 @pytest.mark.parametrize(

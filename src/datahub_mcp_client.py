@@ -33,6 +33,8 @@ from datahub.emitter.mcp import MetadataChangeProposalWrapper
 from datahub.ingestion.graph.client import DataHubGraph, DatahubClientConfig
 from datahub.metadata.schema_classes import (
     AuditStampClass,
+    DatasetProfileClass,
+    DatasetUsageStatisticsClass,
     GlobalTagsClass,
     InstitutionalMemoryClass,
     InstitutionalMemoryMetadataClass,
@@ -45,10 +47,12 @@ from datahub.metadata.schema_classes import (
 from .models import (
     AffectedAsset,
     DatasetGovernance,
+    DatasetProfile,
     LineageContext,
     Owner,
     RiskLevel,
     SchemaChange,
+    UsageStats,
 )
 
 logger = logging.getLogger(__name__)
@@ -446,6 +450,80 @@ class DataHubMCPClient:
             logger.debug("governance fallback failed for %s: %s", dataset_urn, exc)
         return out
 
+    def get_dataset_profile(self, dataset_urn: str, column_name: str = "") -> dict:
+        """Latest profile snapshot: row count, size, and the changed column's stats.
+
+        A wide table with millions of rows and a densely populated column is a
+        very different risk from an empty staging table.
+        """
+        blank = {
+            "row_count": None,
+            "column_count": None,
+            "size_in_bytes": None,
+            "column_null_fraction": None,
+            "column_distinct_count": None,
+        }
+        if not self.available or not self.graph:
+            return blank
+        try:
+            profile = self.graph.get_latest_timeseries_value(
+                dataset_urn, DatasetProfileClass, filter_criteria_map={}
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("no profile for %s: %s", dataset_urn, exc)
+            return blank
+        if not profile:
+            return blank
+
+        out = dict(blank)
+        out["row_count"] = profile.rowCount
+        out["column_count"] = profile.columnCount
+        out["size_in_bytes"] = profile.sizeInBytes
+        for field in profile.fieldProfiles or []:
+            if column_name and field.fieldPath == column_name:
+                out["column_null_fraction"] = (
+                    (field.nullCount / profile.rowCount)
+                    if field.nullCount is not None and profile.rowCount
+                    else None
+                )
+                out["column_distinct_count"] = field.uniqueCount
+                break
+        return out
+
+    def get_dataset_queries(self, dataset_urn: str, column_name: str = "", limit: int = 5) -> dict:
+        """Real SQL that hits this dataset, plus how often the column is queried.
+
+        Grounding generated migrations in queries people actually run beats
+        guessing at joins and filters from the schema alone.
+        """
+        blank = {
+            "total_queries": None,
+            "unique_users": None,
+            "column_query_count": None,
+            "top_queries": [],
+        }
+        if not self.available or not self.graph:
+            return blank
+        try:
+            usage = self.graph.get_latest_timeseries_value(
+                dataset_urn, DatasetUsageStatisticsClass, filter_criteria_map={}
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("no usage stats for %s: %s", dataset_urn, exc)
+            return blank
+        if not usage:
+            return blank
+
+        out = dict(blank)
+        out["total_queries"] = usage.totalSqlQueries
+        out["unique_users"] = usage.uniqueUserCount
+        out["top_queries"] = [q for q in (usage.topSqlQueries or [])[:limit] if q]
+        for field in usage.fieldCounts or []:
+            if column_name and field.fieldPath == column_name:
+                out["column_query_count"] = field.count
+                break
+        return out
+
     # ----------------------------------------------------------------- writes
 
     def apply_tag(self, dataset_urn: str, tag_urn: str) -> bool:
@@ -554,7 +632,11 @@ class DataHubMCPClient:
             columns=gov.get("columns", []),
         )
 
-        lineage = self.get_column_lineage(urn, change.column or "")
+        column = change.column or ""
+        ctx.profile = DatasetProfile(**self.get_dataset_profile(urn, column))
+        ctx.usage = UsageStats(**self.get_dataset_queries(urn, column))
+
+        lineage = self.get_column_lineage(urn, column)
         ctx.downstream = lineage["all"]
         ctx.upstream = self.get_upstream_datasets(urn)
         return ctx

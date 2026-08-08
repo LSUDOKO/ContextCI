@@ -93,6 +93,38 @@ class DatasetGovernance(BaseModel):
     columns: List[str] = Field(default_factory=list)
 
 
+class DatasetProfile(BaseModel):
+    """Latest profile snapshot — how much data is actually in the table."""
+
+    row_count: Optional[int] = None
+    column_count: Optional[int] = None
+    size_in_bytes: Optional[int] = None
+    column_null_fraction: Optional[float] = Field(
+        default=None, description="Null fraction of the changed column, when profiled"
+    )
+    column_distinct_count: Optional[int] = None
+
+
+class UsageStats(BaseModel):
+    """Query history from DataHub, used to ground generated migrations in real SQL."""
+
+    total_queries: Optional[int] = None
+    unique_users: Optional[int] = None
+    column_query_count: Optional[int] = Field(
+        default=None, description="How many queries touched the changed column"
+    )
+    top_queries: List[str] = Field(default_factory=list)
+
+
+class GovernanceGate(BaseModel):
+    """Why a change needs human sign-off before it can merge, if it does."""
+
+    requires_security_review: bool = False
+    sensitive_terms: List[str] = Field(default_factory=list)
+    tier1_assets: List[str] = Field(default_factory=list)
+    reasons: List[str] = Field(default_factory=list)
+
+
 class LineageContext(BaseModel):
     """Everything DataHub knows about one schema change."""
 
@@ -100,6 +132,8 @@ class LineageContext(BaseModel):
     dataset_urn: Optional[str] = None
     resolved: bool = Field(default=False, description="False when the table could not be found in DataHub")
     governance: Optional[DatasetGovernance] = None
+    profile: Optional[DatasetProfile] = None
+    usage: Optional[UsageStats] = None
     downstream: List[AffectedAsset] = Field(default_factory=list)
     upstream: List[AffectedAsset] = Field(default_factory=list)
     errors: List[str] = Field(default_factory=list)
@@ -123,6 +157,7 @@ class BlastReport(BaseModel):
     generated_fixes: List[GeneratedFix] = Field(default_factory=list)
     recommended_action: RecommendedAction
     reasoning: Optional[str] = None
+    governance_gate: GovernanceGate = Field(default_factory=GovernanceGate)
 
 
 class ChangeVerdict(BaseModel):
