@@ -61,8 +61,8 @@ def _pr_url(repo: str, pr_number: int) -> str:
 
 def run(repo_full_name: str, pr_number: int) -> RunResult:
     """Phases 1-3 plus the DataHub write-back. Returns the aggregate verdict."""
-    platform = os.getenv("DATAHUB_PLATFORM", "postgres")
-    env = os.getenv("DATAHUB_ENV", "PROD")
+    platform = os.getenv("DATAHUB_PLATFORM") or "postgres"
+    env = os.getenv("DATAHUB_ENV") or "PROD"
 
     changes: List[SchemaChange] = parse_pull_request(repo_full_name, pr_number)
     logger.info("phase 1: %d schema change(s) detected", len(changes))
@@ -211,9 +211,9 @@ def run_local(diff_path: str) -> RunResult:
     This is how you exercise the gate against a real DataHub instance without
     opening a pull request first: `python -m src.main --diff examples/breaking_change.diff`.
     """
-    platform = os.getenv("DATAHUB_PLATFORM", "postgres")
-    env = os.getenv("DATAHUB_ENV", "PROD")
-    os.environ["TOOLS_IS_MUTATION_ENABLED"] = os.getenv("TOOLS_IS_MUTATION_ENABLED", "false")
+    platform = os.getenv("DATAHUB_PLATFORM") or "postgres"
+    env = os.getenv("DATAHUB_ENV") or "PROD"
+    os.environ["TOOLS_IS_MUTATION_ENABLED"] = os.getenv("TOOLS_IS_MUTATION_ENABLED") or "false"
 
     with open(diff_path, encoding="utf-8") as handle:
         changes = parse_diff_file(handle.read(), fallback_name=diff_path)
@@ -260,7 +260,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     load_dotenv()
     logging.basicConfig(
-        level=os.getenv("CONTEXTCI_LOG_LEVEL", "INFO"),
+        level=os.getenv("CONTEXTCI_LOG_LEVEL") or "INFO",
         format="%(levelname)s %(name)s: %(message)s",
     )
 
