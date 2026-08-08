@@ -282,6 +282,7 @@ def active_provider() -> Optional[str]:
 def analyze(change: SchemaChange, context: LineageContext) -> BlastReport:
     """Produce a blast report for one schema change."""
     gate = evaluate_governance_gate(change, context)
+    baseline = _analyze_with_rules(change, context)
     provider = active_provider()
     if provider:
         verdict = (
@@ -291,13 +292,44 @@ def analyze(change: SchemaChange, context: LineageContext) -> BlastReport:
         )
         if verdict:
             logger.info("phase 3: verdict from %s", provider)
-            return _apply_gate(_report_from_verdict(verdict, context, change), gate)
+            report = _apply_floor(_report_from_verdict(verdict, context, change), baseline)
+            return _apply_gate(report, gate)
         logger.warning("falling back to rule-based analysis for %s", change.identity)
     else:
         logger.info(
             "no ANTHROPIC_API_KEY or GROQ_API_KEY set; using rule-based analysis"
         )
-    return _apply_gate(_analyze_with_rules(change, context), gate)
+    return _apply_gate(baseline, gate)
+
+
+def _apply_floor(report: BlastReport, baseline: BlastReport) -> BlastReport:
+    """Never let the model rule a change safer than the deterministic analysis.
+
+    Hosted inference is not reproducible — the same input can come back `high /
+    block` on one run and `medium / warn` on the next, and a gate whose decision
+    flips on identical input is not a gate. The rules are the floor: the model
+    supplies the reasoning, the summary and the migration, and may escalate, but
+    the action and risk never fall below what the rules alone would have said.
+    """
+    raised = _RISK_ORDER.index(report.risk_level) < _RISK_ORDER.index(baseline.risk_level)
+    if raised:
+        logger.info(
+            "model said %s, rules said %s — holding at the rule floor",
+            report.risk_level.value, baseline.risk_level.value,
+        )
+        report.risk_level = baseline.risk_level
+        # The model under-called the severity, so its per-asset judgement is not
+        # trustworthy either — a critical verdict with nothing marked downstream
+        # would tag the source and leave the blast radius unflagged.
+        report.affected_assets = baseline.affected_assets
+    if _ACTION_ORDER.index(report.recommended_action) < _ACTION_ORDER.index(
+        baseline.recommended_action
+    ):
+        report.recommended_action = baseline.recommended_action
+    report.is_breaking = report.is_breaking or baseline.is_breaking
+    if report.is_breaking and not report.generated_fixes:
+        report.generated_fixes = baseline.generated_fixes
+    return report
 
 
 def _verdict_from_anthropic(
@@ -354,6 +386,7 @@ def _verdict_from_groq(change: SchemaChange, context: LineageContext) -> Optiona
             response = client.chat.completions.create(
                 model=GROQ_MODEL,
                 max_tokens=GROQ_MAX_TOKENS,
+                temperature=0,
                 messages=messages,
                 response_format={
                     "type": "json_schema",
@@ -369,6 +402,7 @@ def _verdict_from_groq(change: SchemaChange, context: LineageContext) -> Optiona
             response = client.chat.completions.create(
                 model=GROQ_MODEL,
                 max_tokens=GROQ_MAX_TOKENS,
+                temperature=0,
                 messages=messages,
                 response_format={"type": "json_object"},
             )
@@ -412,6 +446,7 @@ def _report_from_verdict(
 
 
 _RISK_ORDER = [RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH, RiskLevel.CRITICAL]
+_ACTION_ORDER = [RecommendedAction.APPROVE, RecommendedAction.WARN, RecommendedAction.BLOCK]
 # Escalation markers are broader than the compliance gate: revenue-critical raises
 # risk but is an engineering call, not a security review.
 _ESCALATING_MARKERS = SENSITIVE_MARKERS + TIER1_MARKERS + ("revenue-critical", "revenue")

@@ -164,3 +164,51 @@ def test_breaking_changes_always_carry_a_fix(change_type, column):
     report = _analyze_with_rules(change, ctx)
     assert report.generated_fixes
     assert report.generated_fixes[0].code.strip()
+
+
+def test_model_may_escalate_above_the_rule_floor():
+    from src.blast_analyzer import _apply_floor
+    from src.models import BlastReport
+
+    model = BlastReport(is_breaking=True, risk_level=RiskLevel.CRITICAL, summary="s",
+                        recommended_action=RecommendedAction.BLOCK)
+    rules = BlastReport(is_breaking=True, risk_level=RiskLevel.MEDIUM, summary="s",
+                        recommended_action=RecommendedAction.WARN)
+    out = _apply_floor(model, rules)
+    assert out.risk_level is RiskLevel.CRITICAL
+    assert out.recommended_action is RecommendedAction.BLOCK
+
+
+def test_model_cannot_rule_a_change_safer_than_the_rules():
+    """Hosted inference is not reproducible; the gate's decision must be."""
+    from src.blast_analyzer import _apply_floor
+    from src.models import BlastReport, GeneratedFix
+
+    model = BlastReport(is_breaking=False, risk_level=RiskLevel.LOW, summary="looks fine",
+                        recommended_action=RecommendedAction.APPROVE)
+    rules = BlastReport(
+        is_breaking=True, risk_level=RiskLevel.HIGH, summary="13 downstream",
+        recommended_action=RecommendedAction.BLOCK,
+        generated_fixes=[GeneratedFix(file_path="c.sql", code="SELECT 1;", description="d")],
+    )
+    out = _apply_floor(model, rules)
+    assert out.risk_level is RiskLevel.HIGH
+    assert out.recommended_action is RecommendedAction.BLOCK
+    assert out.is_breaking is True
+    assert out.summary == "looks fine", "the model still writes the narrative"
+    assert out.generated_fixes, "a breaking verdict must carry a migration"
+
+
+def test_flooring_also_restores_the_per_asset_risk():
+    """A critical verdict must not leave the blast radius unflagged."""
+    from src.blast_analyzer import _apply_floor
+    from src.models import BlastReport
+
+    hot = _asset("dbt_a", confirmed=True)
+    hot.risk = RiskLevel.CRITICAL
+    model = BlastReport(is_breaking=False, risk_level=RiskLevel.LOW, summary="fine",
+                        recommended_action=RecommendedAction.APPROVE, affected_assets=[])
+    rules = BlastReport(is_breaking=True, risk_level=RiskLevel.CRITICAL, summary="13 downstream",
+                        recommended_action=RecommendedAction.BLOCK, affected_assets=[hot])
+    out = _apply_floor(model, rules)
+    assert [a.risk for a in out.affected_assets] == [RiskLevel.CRITICAL]
