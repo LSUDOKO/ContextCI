@@ -45,8 +45,12 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           DATAHUB_MCP_URL: ${{ secrets.DATAHUB_MCP_URL }}
           DATAHUB_GMS_TOKEN: ${{ secrets.DATAHUB_GMS_TOKEN }}
+          DATAHUB_FRONTEND_URL: ${{ vars.DATAHUB_FRONTEND_URL }}
+          # Reasoning provider: whichever key is set wins, Anthropic first.
+          # With neither, the deterministic rule-based analyzer runs.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CONTEXTCI_GROQ_MODEL: ${{ vars.CONTEXTCI_GROQ_MODEL }}
           # Platform/env used when resolving table names to DataHub URNs.
           DATAHUB_PLATFORM: ${{ vars.DATAHUB_PLATFORM || 'postgres' }}
           DATAHUB_ENV: ${{ vars.DATAHUB_ENV || 'PROD' }}
