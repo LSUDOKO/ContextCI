@@ -12,6 +12,7 @@ to a warning rather than breaking the build.
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
@@ -20,7 +21,7 @@ from typing import List, Optional
 
 from .blast_analyzer import analyze
 from .datahub_mcp_client import DataHubMCPClient
-from .diff_parser import parse_pull_request
+from .diff_parser import parse_patch, parse_pull_request
 from .github_reporter import GitHubReporter, render_comment
 from .models import ChangeVerdict, RecommendedAction, RiskLevel, RunResult, SchemaChange
 

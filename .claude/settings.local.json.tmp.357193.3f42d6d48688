@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker system *)",
+      "Bash(./.venv/bin/python -c ' *)",
+      "Skill(claude-api)",
+      "Bash(docker start *)",
+      "Bash(docker inspect *)",
+      "Bash(docker network *)",
+      "Bash(docker port *)",
+      "Bash(set -e)",
+      "Bash(docker stop *)",
+      "Bash(docker rm *)",
+      "Bash(docker run *)",
+      "Bash(docker restart *)",
+      "Bash(./.venv/bin/python -m pytest tests/ -q)",
+      "Bash(curl -fsSL https://raw.githubusercontent.com/JuliusBrussee/caveman/main/src/tools/caveman-init.js)",
+      "Bash(node - --dry-run)",
+      "Bash(node -)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'chore: add caveman agent rule files for Cursor, Windsurf, Cline, Copilot, opencode *)"
+    ]
+  }
+}
