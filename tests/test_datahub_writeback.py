@@ -121,6 +121,53 @@ def test_no_security_tag_when_the_gate_is_clear(client):
     assert "urn:li:tag:Security-Review-Required" not in _tags(client, URN)
 
 
+def test_risk_tag_replaces_the_previous_level(client):
+    """A dataset must carry the current risk, not every risk it ever had."""
+    down = "urn:li:dataset:(urn:li:dataPlatform:dbt,dim_customers,PROD)"
+    client.write_back(URN, [down], RiskLevel.CRITICAL, "note")
+    assert _tags(client, down) == ["urn:li:tag:Blast-Risk-Critical"]
+    client.write_back(URN, [down], RiskLevel.MEDIUM, "note")
+    assert _tags(client, down) == ["urn:li:tag:Blast-Risk-Medium"]
+
+
+def test_replacing_a_risk_tag_leaves_unrelated_tags_alone(client):
+    down = "urn:li:dataset:x"
+    client.graph.aspects[(down, GlobalTagsClass)] = GlobalTagsClass(
+        tags=[TagAssociationClass(tag="urn:li:tag:Gold"),
+              TagAssociationClass(tag="urn:li:tag:Blast-Risk-Low")]
+    )
+    client.write_back(URN, [down], RiskLevel.HIGH, "note")
+    assert _tags(client, down) == ["urn:li:tag:Gold", "urn:li:tag:Blast-Risk-High"]
+
+
+def test_security_badge_is_cleared_when_the_gate_stops_firing(client):
+    client.write_back(URN, [], RiskLevel.HIGH, "note", requires_security_review=True)
+    assert "urn:li:tag:Security-Review-Required" in _tags(client, URN)
+    client.write_back(URN, [], RiskLevel.HIGH, "note", requires_security_review=False)
+    assert "urn:li:tag:Security-Review-Required" not in _tags(client, URN)
+    assert "urn:li:tag:Schema-Change-Pending" in _tags(client, URN)
+
+
+def test_clear_pending_removes_every_contextci_marker(client):
+    down = "urn:li:dataset:(urn:li:dataPlatform:dbt,dim_customers,PROD)"
+    client.write_back(URN, [down], RiskLevel.CRITICAL, "note",
+                      column_name="customer_id", requires_security_review=True)
+    client.clear_pending(URN, [down], "customer_id")
+    assert _tags(client, URN) == []
+    assert _tags(client, down) == []
+    esm = client.graph.aspects[(URN, EditableSchemaMetadataClass)]
+    assert esm.editableSchemaFieldInfo[0].globalTags.tags == []
+
+
+def test_clear_pending_leaves_other_peoples_tags_alone(client):
+    client.graph.aspects[(URN, GlobalTagsClass)] = GlobalTagsClass(
+        tags=[TagAssociationClass(tag="urn:li:tag:Legacy")]
+    )
+    client.write_back(URN, [], RiskLevel.HIGH, "note")
+    client.clear_pending(URN, [])
+    assert _tags(client, URN) == ["urn:li:tag:Legacy"]
+
+
 def test_mutations_can_be_disabled(client, monkeypatch):
     """TOOLS_IS_MUTATION_ENABLED=false makes every write a no-op dry run."""
     monkeypatch.setenv("TOOLS_IS_MUTATION_ENABLED", "false")

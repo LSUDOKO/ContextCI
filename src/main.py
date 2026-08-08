@@ -111,7 +111,16 @@ def _write_back(
         return
 
     for verdict in result.verdicts:
-        if not verdict.report.is_breaking or not verdict.context.dataset_urn:
+        if not verdict.context.dataset_urn:
+            continue
+        if not verdict.report.is_breaking:
+            # Judged safe now. Clear anything an earlier run left behind so the
+            # catalog stops warning about a change that turned out fine.
+            client.clear_pending(
+                verdict.context.dataset_urn,
+                [a.urn for a in verdict.report.affected_assets],
+                verdict.change.column or "",
+            )
             continue
         target = (
             f"column `{verdict.change.column}`"

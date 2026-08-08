@@ -539,8 +539,17 @@ class DataHubMCPClient:
             return True
         return raw.strip().lower() in ("1", "true", "yes", "on")
 
-    def apply_tag(self, dataset_urn: str, tag_urn: str) -> bool:
-        """Add a tag to a dataset. Idempotent: re-running never duplicates tags."""
+    def apply_tag(
+        self, dataset_urn: str, tag_urn: str, replaces_prefix: Optional[str] = None
+    ) -> bool:
+        """Add a tag to a dataset. Idempotent: re-running never duplicates tags.
+
+        ``replaces_prefix`` makes the tag exclusive within its family: applying
+        ``Blast-Risk-High`` with prefix ``Blast-Risk-`` drops any
+        ``Blast-Risk-Medium`` left over from an earlier run. Without it a dataset
+        accumulates every risk level it was ever assigned, and the catalog stops
+        telling you which one is current.
+        """
         if not self.available or not self.graph:
             return False
         if not self.mutations_enabled():
@@ -548,16 +557,32 @@ class DataHubMCPClient:
             return False
         try:
             current = self.graph.get_aspect(dataset_urn, GlobalTagsClass) or GlobalTagsClass(tags=[])
-            if any(t.tag == tag_urn for t in current.tags or []):
+            tags = list(current.tags or [])
+
+            stale = []
+            if replaces_prefix:
+                marker = f"urn:li:tag:{replaces_prefix}"
+                stale = [t for t in tags if t.tag.startswith(marker) and t.tag != tag_urn]
+                tags = [t for t in tags if t not in stale]
+
+            if any(t.tag == tag_urn for t in tags) and not stale:
                 logger.info("tag %s already present on %s", tag_urn, dataset_urn)
                 return True
 
             self._ensure_tag_exists(tag_urn)
-            current.tags = list(current.tags or []) + [TagAssociationClass(tag=tag_urn)]
+            if not any(t.tag == tag_urn for t in tags):
+                tags.append(TagAssociationClass(tag=tag_urn))
+            current.tags = tags
             self.graph.emit_mcp(
                 MetadataChangeProposalWrapper(entityUrn=dataset_urn, aspect=current)
             )
-            logger.info("tagged %s with %s", dataset_urn, tag_urn)
+            if stale:
+                logger.info(
+                    "tagged %s with %s, removed stale %s",
+                    dataset_urn, tag_urn, [t.tag.rsplit(":", 1)[-1] for t in stale],
+                )
+            else:
+                logger.info("tagged %s with %s", dataset_urn, tag_urn)
             return True
         except Exception as exc:  # noqa: BLE001
             logger.warning("apply_tag failed for %s: %s", dataset_urn, exc)
@@ -727,10 +752,13 @@ class DataHubMCPClient:
         results[f"tag:{source_urn}:review"] = self.apply_tag(
             source_urn, make_tag_urn("PR-Under-Review")
         )
+        security_tag = make_tag_urn("Security-Review-Required")
         if requires_security_review:
-            results[f"tag:{source_urn}:security"] = self.apply_tag(
-                source_urn, make_tag_urn("Security-Review-Required")
-            )
+            results[f"tag:{source_urn}:security"] = self.apply_tag(source_urn, security_tag)
+        else:
+            # A change that no longer needs review must not keep the badge from a
+            # run that did.
+            self.remove_tag(source_urn, security_tag)
         if column_name:
             results[f"field:{source_urn}:{column_name}"] = self.apply_field_tag(
                 source_urn, column_name, pending
@@ -739,8 +767,73 @@ class DataHubMCPClient:
 
         risk_tag = make_tag_urn(f"Blast-Risk-{risk_level.value.capitalize()}")
         for urn in downstream_urns:
-            results[f"tag:{urn}"] = self.apply_tag(urn, risk_tag)
+            results[f"tag:{urn}"] = self.apply_tag(urn, risk_tag, replaces_prefix="Blast-Risk-")
         return results
+
+    def clear_pending(self, source_urn: str, downstream_urns: List[str], column_name: str = "") -> int:
+        """Remove ContextCI's own markers once a change is judged safe.
+
+        A dataset that was flagged by an earlier run and is no longer breaking
+        must lose the badge, or the catalog keeps warning analysts about a change
+        that is fine.
+        """
+        removed = 0
+        for tag in ("Schema-Change-Pending", "PR-Under-Review", "Security-Review-Required"):
+            removed += bool(self.remove_tag(source_urn, make_tag_urn(tag)))
+        if column_name:
+            removed += bool(
+                self.remove_field_tag(source_urn, column_name, make_tag_urn("Schema-Change-Pending"))
+            )
+        for urn in downstream_urns:
+            for level in ("Low", "Medium", "High", "Critical"):
+                removed += bool(self.remove_tag(urn, make_tag_urn(f"Blast-Risk-{level}")))
+        if removed:
+            logger.info("cleared %d stale ContextCI marker(s) from %s", removed, source_urn)
+        return removed
+
+    def remove_field_tag(self, dataset_urn: str, column_name: str, tag_urn: str) -> bool:
+        """Drop a column-level tag if present."""
+        if not self.available or not self.graph or not self.mutations_enabled():
+            return False
+        try:
+            current = self.graph.get_aspect(dataset_urn, EditableSchemaMetadataClass)
+            if not current:
+                return False
+            field = next(
+                (f for f in current.editableSchemaFieldInfo or [] if f.fieldPath == column_name),
+                None,
+            )
+            if not field or not field.globalTags:
+                return False
+            keep = [t for t in field.globalTags.tags or [] if t.tag != tag_urn]
+            if len(keep) == len(field.globalTags.tags or []):
+                return False
+            field.globalTags.tags = keep
+            self.graph.emit_mcp(
+                MetadataChangeProposalWrapper(entityUrn=dataset_urn, aspect=current)
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("remove_field_tag failed for %s.%s: %s", dataset_urn, column_name, exc)
+            return False
+
+    def remove_tag(self, dataset_urn: str, tag_urn: str) -> bool:
+        """Drop a tag if present. No-op when it isn't, or when writes are off."""
+        if not self.available or not self.graph or not self.mutations_enabled():
+            return False
+        try:
+            current = self.graph.get_aspect(dataset_urn, GlobalTagsClass)
+            if not current or not any(t.tag == tag_urn for t in current.tags or []):
+                return False
+            current.tags = [t for t in current.tags if t.tag != tag_urn]
+            self.graph.emit_mcp(
+                MetadataChangeProposalWrapper(entityUrn=dataset_urn, aspect=current)
+            )
+            logger.info("removed %s from %s", tag_urn, dataset_urn)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("remove_tag failed for %s: %s", dataset_urn, exc)
+            return False
 
     def close(self) -> None:
         if self.graph:
