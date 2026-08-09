@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ContextCI — schema changes meet their blast radius before the merge</title>
+<meta name="description" content="A GitHub Action that reads DataHub column-level lineage, blocks breaking schema changes in pull requests, writes the backward-compatible migration, and tags the affected datasets back in the catalog.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#07121F;          /* blueprint ground */
+  --panel:#0C1B2C;
+  --rule:#173049;
+  --paper:#E6EDF5;
+  --muted:#7D93AC;
+  --block:#FF5C5C;      /* the verdict that stops a merge */
+  --warn:#F2B33D;        /* unconfirmed lineage */
+  --fix:#48D9A4;         /* the generated migration */
+  --wire:#2A5C8A;
+  --display:"Space Grotesk",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--ink);color:var(--paper);font-family:var(--body);
+  font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased;
+  background-image:linear-gradient(var(--rule) 1px,transparent 1px),linear-gradient(90deg,var(--rule) 1px,transparent 1px);
+  background-size:64px 64px;background-position:-1px -1px;
+}
+body::before{content:"";position:fixed;inset:0;background:radial-gradient(120% 90% at 50% 0,transparent 30%,var(--ink) 78%);pointer-events:none;z-index:0}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px;position:relative;z-index:1}
+h1,h2,h3{font-family:var(--display);font-weight:700;letter-spacing:-.02em;line-height:1.1;margin:0}
+a{color:inherit}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+
+/* ── header ─────────────────────────────────────────── */
+header{display:flex;justify-content:space-between;align-items:center;padding:28px 0;gap:16px;flex-wrap:wrap}
+.mark{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-.01em}
+.mark span{color:var(--block)}
+.nav{display:flex;gap:26px;font-size:14px;color:var(--muted);align-items:center;flex-wrap:wrap}
+.nav a{text-decoration:none}
+.nav a:hover{color:var(--paper)}
+
+/* ── hero ───────────────────────────────────────────── */
+.hero{padding:56px 0 40px}
+.hero h1{font-size:clamp(38px,6.4vw,68px);max-width:15ch}
+.hero h1 em{font-style:normal;color:var(--block)}
+.lede{margin:26px 0 0;max-width:56ch;color:#B9C8D9;font-size:19px}
+.cta{display:flex;gap:12px;margin-top:34px;flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;gap:9px;padding:13px 20px;border-radius:2px;
+  font-family:var(--display);font-weight:500;font-size:15px;text-decoration:none;
+  border:1px solid var(--wire);background:transparent;color:var(--paper);transition:.18s
+}
+.btn:hover{border-color:var(--paper);transform:translateY(-1px)}
+.btn-primary{background:var(--paper);color:var(--ink);border-color:var(--paper)}
+.btn-primary:hover{background:#fff}
+:focus-visible{outline:2px solid var(--warn);outline-offset:3px}
+
+/* ── signature: the blast radius ────────────────────── */
+.radius{margin:52px 0 0;border:1px solid var(--rule);background:rgba(7,18,31,.72);backdrop-filter:blur(2px)}
+.radius-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:12px;color:var(--muted);flex-wrap:wrap;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--block);display:inline-block;margin-right:7px;vertical-align:middle}
+.radius svg{display:block;width:100%;height:auto}
+.edge{stroke:var(--wire);stroke-width:1.25;fill:none;opacity:.55}
+.edge.hot{stroke:var(--block);opacity:.95}
+.node text{font-family:var(--mono);font-size:11px;fill:#9FB4C8}
+.node rect{fill:var(--panel);stroke:var(--rule)}
+.node.hot rect{stroke:var(--block)}
+.node.hot text{fill:var(--paper)}
+.src rect{fill:#12293F;stroke:var(--block)}
+.src text{fill:var(--paper);font-weight:500}
+.strike{stroke:var(--block);stroke-width:1.5}
+.legend{display:flex;gap:20px;padding:12px 16px;border-top:1px solid var(--rule);font-family:var(--mono);font-size:11px;color:var(--muted);flex-wrap:wrap}
+.swatch{width:9px;height:9px;display:inline-block;margin-right:6px}
+
+@media (prefers-reduced-motion:no-preference){
+  .draw{stroke-dasharray:1;stroke-dashoffset:1;animation:draw .9s ease forwards}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  .fade{opacity:0;animation:fade .5s ease forwards}
+  @keyframes fade{to{opacity:1}}
+}
+
+/* ── sections ───────────────────────────────────────── */
+section{padding:76px 0;border-top:1px solid var(--rule)}
+.h2{font-size:clamp(26px,3.4vw,38px);margin-bottom:14px}
+.sub{color:var(--muted);max-width:62ch;margin:0 0 40px}
+
+/* pipeline — a real sequence, so it is numbered */
+.pipe{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule)}
+@media(min-width:820px){.pipe{grid-template-columns:repeat(4,1fr)}}
+.step{background:var(--ink);padding:26px 22px}
+.step .n{font-family:var(--mono);font-size:12px;color:var(--block);letter-spacing:.1em}
+.step h3{font-size:19px;margin:12px 0 9px}
+.step p{margin:0;color:var(--muted);font-size:15px}
+.step code{font-family:var(--mono);font-size:12.5px;color:#A8C4DD}
+
+/* table */
+.tbl{width:100%;border-collapse:collapse;font-size:15px}
+.tbl th{text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:0 14px 12px 0;border-bottom:1px solid var(--rule);font-weight:400}
+.tbl td{padding:16px 14px 16px 0;border-bottom:1px solid var(--rule);vertical-align:top;color:#C3D2E2}
+.tbl td:first-child{color:var(--paper);font-family:var(--display);font-weight:500;white-space:nowrap}
+.tbl code{font-family:var(--mono);font-size:12.5px;color:var(--warn)}
+
+/* invariants */
+.laws{display:grid;gap:20px}
+@media(min-width:760px){.laws{grid-template-columns:1fr 1fr}}
+.law{border:1px solid var(--rule);border-left:2px solid var(--warn);padding:26px 24px;background:rgba(12,27,44,.55)}
+.law h3{font-size:19px;margin-bottom:10px}
+.law p{margin:0;color:var(--muted);font-size:15px}
+.law:last-child{border-left-color:var(--fix)}
+
+/* evidence */
+.eve{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule)}
+@media(min-width:640px){.eve{grid-template-columns:repeat(4,1fr)}}
+.stat{background:var(--ink);padding:24px 20px}
+.stat b{display:block;font-family:var(--display);font-size:32px;line-height:1;margin-bottom:8px}
+.stat span{font-family:var(--mono);font-size:11.5px;color:var(--muted);letter-spacing:.06em}
+.term{margin-top:28px;border:1px solid var(--rule);background:#050D17;padding:20px 22px;overflow-x:auto}
+.term pre{margin:0;font-family:var(--mono);font-size:13px;line-height:1.75;color:#A8C4DD}
+.term .ok{color:var(--fix)}.term .bad{color:var(--block)}.term .dim{color:var(--muted)}
+
+/* run it */
+.run{display:grid;gap:26px}
+@media(min-width:820px){.run{grid-template-columns:1.1fr .9fr}}
+.card{border:1px solid var(--rule);padding:28px 26px;background:rgba(12,27,44,.55)}
+.card h3{font-size:20px;margin-bottom:12px}
+.card ol{margin:0;padding-left:20px;color:var(--muted);font-size:15px}
+.card li{margin-bottom:9px}
+.card code{font-family:var(--mono);font-size:13px;color:var(--warn)}
+
+footer{border-top:1px solid var(--rule);padding:44px 0 64px;color:var(--muted);font-size:14px;display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap}
+footer a{color:var(--paper)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="mark">Context<span>CI</span></div>
+  <nav class="nav">
+    <a href="#how">How it works</a>
+    <a href="#datahub">DataHub</a>
+    <a href="#laws">Invariants</a>
+    <a href="#proof">Evidence</a>
+    <a href="#run">Run it</a>
+    <a href="https://github.com/LSUDOKO/ContextCI">GitHub ↗</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <p class="eyebrow">Shift-left data governance · Apache 2.0</p>
+  <h1>Every schema change ships with a <em>blast radius</em>.</h1>
+  <p class="lede">
+    A developer drops a column. Every application test passes — it is valid SQL, and nothing
+    in that repository mentions data. Twelve hours later a dbt model returns NULLs, a
+    dashboard shows the wrong revenue, and a model trains on empty values. Nothing errored.
+  </p>
+  <p class="lede">
+    The lineage that would have caught it already exists in DataHub. It is just on the wrong
+    side of the merge button. <strong>ContextCI moves it.</strong>
+  </p>
+  <div class="cta">
+    <a class="btn btn-primary" href="https://github.com/LSUDOKO/ContextCI">View the repository</a>
+    <a class="btn" href="https://codespaces.new/LSUDOKO/ContextCI?quickstart=1&amp;machine=standardLinux32gb">Run it in Codespaces</a>
+  </div>
+</div>
+
+<!-- SIGNATURE: the blast radius, drawn -->
+<div class="radius">
+  <div class="radius-head">
+    <span><span class="dot"></span>ALTER TABLE SampleHiveDataset DROP COLUMN field_foo;</span>
+    <span>verdict: <strong style="color:var(--block)">block</strong> · exit 1</span>
+  </div>
+  <svg viewBox="0 0 1000 330" role="img" aria-label="Diagram: dropping the column field_foo reaches thirteen downstream assets — dbt models, Airflow jobs, ML features and an S3 backup.">
+    <g class="node src">
+      <rect x="20" y="128" width="212" height="62" rx="2"/>
+      <text x="36" y="153">SampleHiveDataset</text>
+      <text x="36" y="172" style="fill:#FF5C5C">field_foo</text>
+      <line class="strike" x1="34" y1="167" x2="112" y2="167"/>
+    </g>
+    <g id="edges"></g>
+    <g id="targets"></g>
+  </svg>
+  <div class="legend">
+    <span><i class="swatch" style="background:var(--block)"></i>reads the dropped column</span>
+    <span><i class="swatch" style="background:var(--wire)"></i>downstream, column-level unconfirmed</span>
+    <span style="margin-left:auto">13 assets · 2 datasets · 2 Airflow jobs · 7 ML features · 1 S3 backup · 1 view</span>
+  </div>
+</div>
+
+<section id="how">
+  <p class="eyebrow">The run</p>
+  <h2 class="h2">Four phases, on every pull request</h2>
+  <p class="sub">The Action triggers on <code>pull_request</code>. No developer has to open DataHub, know dbt, or wait for a data-team review.</p>
+  <div class="pipe">
+    <div class="step">
+      <div class="n">PHASE 01</div>
+      <h3>Read the diff</h3>
+      <p>Parses the patch — not whole files — for raw SQL DDL, Alembic <code>op.*</code> migrations, dbt <code>schema.yml</code> removals and dbt select lists. Deleting an old migration is not a schema change; commented-out DDL is ignored.</p>
+    </div>
+    <div class="step">
+      <div class="n">PHASE 02</div>
+      <h3>Ask the catalog</h3>
+      <p>Resolves each table to a dataset URN, then pulls column-level lineage, ownership, glossary terms, the dataset profile, and the SQL people actually run against it.</p>
+    </div>
+    <div class="step">
+      <div class="n">PHASE 03</div>
+      <h3>Judge and repair</h3>
+      <p>An LLM weighs the evidence and writes the backward-compatible migration. Deterministic rules set a floor it cannot go below, and a compliance gate can override both.</p>
+    </div>
+    <div class="step">
+      <div class="n">PHASE 04</div>
+      <h3>Act, both ways</h3>
+      <p>One sticky PR comment, an optional fix commit, and tags written <em>back</em> into DataHub. Exit 1 on a block verdict stops the merge.</p>
+    </div>
+  </div>
+</section>
+
+<section id="datahub">
+  <p class="eyebrow">Two-way integration</p>
+  <h2 class="h2">DataHub as an operating system, not a catalog</h2>
+  <p class="sub">Reading metadata is table stakes. The graph is richer after a ContextCI run than it was before.</p>
+  <table class="tbl">
+    <thead><tr><th>Capability</th><th>How ContextCI uses it</th></tr></thead>
+    <tbody>
+      <tr><td>Column-level lineage</td><td><code>searchAcrossLineage</code> finds downstream assets; each one's <code>fineGrainedLineages</code> is checked for the changed column's <code>schemaField</code> URN — so “reads this table” and “reads this column” are never conflated.</td></tr>
+      <tr><td>Ownership</td><td>The owners of the assets that actually break are named on the pull request, so the conversation starts with the right people.</td></tr>
+      <tr><td>Glossary &amp; tags</td><td>PII, GDPR, PHI and Tier-1 markers drive a compliance gate that can force a block regardless of blast radius.</td></tr>
+      <tr><td>Dataset profile</td><td>Row count, size and the column's null fraction size the migration — a backfill across four million rows is not the same as one on a staging stub.</td></tr>
+      <tr><td>Query history</td><td><code>topSqlQueries</code> and per-column <code>fieldCounts</code> ground the generated SQL in joins and filters people really use.</td></tr>
+      <tr><td>Tag mutations</td><td>Writes <code>Schema-Change-Pending</code> and <code>PR-Under-Review</code> on the dataset, <code>Blast-Risk-{level}</code> downstream, and a tag on the <em>column itself</em> via <code>editableSchemaMetadata</code>.</td></tr>
+      <tr><td>Institutional memory</td><td>A pending-change note keyed by the PR URL, so an analyst browsing the catalog learns why the dataset is flagged.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="laws">
+  <p class="eyebrow">Non-negotiable</p>
+  <h2 class="h2">Two invariants that make it a gate</h2>
+  <p class="sub">Both came from real failures found by re-running against live infrastructure, not from design meetings.</p>
+  <div class="laws">
+    <div class="law">
+      <h3>Absent lineage is never approval</h3>
+      <p>A table missing from the catalog, or a downstream asset whose column-level lineage cannot be confirmed, produces a warning — never a pass. The comment labels every asset <code>confirmed</code> or <code>table-level only</code>, so nobody mistakes silence for safety.</p>
+    </div>
+    <div class="law">
+      <h3>The model never rules a change safer than the rules do</h3>
+      <p>Hosted inference is not reproducible: the same input returned <em>high / block</em> twice and <em>medium / warn</em> on the third run, and <code>temperature=0</code> does not fix it. The deterministic analysis is a floor. The model writes the narrative and the migration; the rules own the decision.</p>
+    </div>
+  </div>
+</section>
+
+<section id="proof">
+  <p class="eyebrow">Verified, not claimed</p>
+  <h2 class="h2">It has run against real infrastructure</h2>
+  <p class="sub">A DataHub v1.7.0 instance with authentication enabled, and a live pull request on this repository.</p>
+  <div class="eve">
+    <div class="stat"><b>13</b><span>DOWNSTREAM ASSETS FOUND</span></div>
+    <div class="stat"><b>17/17</b><span>GRAPH MUTATIONS APPLIED</span></div>
+    <div class="stat"><b>74</b><span>TESTS, NO NETWORK</span></div>
+    <div class="stat"><b>401→200</b><span>ANONYMOUS VS TOKEN</span></div>
+  </div>
+  <div class="term">
+<pre><span class="dim">$</span> make demo
+<span class="dim">phase 1:</span> 1 schema change detected
+<span class="dim">phase 2:</span> SampleHiveDataset → <span class="bad">13 downstream</span>
+<span class="dim">phase 3:</span> verdict from groq · risk=<span class="bad">critical</span> action=<span class="bad">block</span>
+<span class="dim">phase 4b:</span> <span class="ok">17/17</span> DataHub mutations applied
+<span class="dim">phase 4a:</span> comment → github.com/LSUDOKO/ContextCI/pull/1
+
+ContextCI verdict: <span class="bad">block</span> (risk: critical)
+<span class="dim">Blocking merge: this change breaks downstream assets.</span></pre>
+  </div>
+</section>
+
+<section id="run">
+  <p class="eyebrow">Try it</p>
+  <h2 class="h2">Nothing to install</h2>
+  <div class="run">
+    <div class="card">
+      <h3>In GitHub Codespaces</h3>
+      <ol>
+        <li>Open the repo → <strong>Code ▸ Codespaces ▸ New with options</strong></li>
+        <li>Choose the <strong>4-core</strong> machine — DataHub needs about 6 GB resident and refuses to start below 13 GB free disk</li>
+        <li>Run <code>make demo</code></li>
+      </ol>
+      <p style="color:var(--muted);font-size:15px;margin:16px 0 0">
+        It boots DataHub, ingests sample metadata with real column-level lineage, runs the
+        gate against a breaking <code>DROP COLUMN</code>, and prints the forwarded DataHub UI
+        URL. Roughly 10–15 minutes cold, almost all of it pulling images.
+      </p>
+      <div class="cta" style="margin-top:22px">
+        <a class="btn btn-primary" href="https://codespaces.new/LSUDOKO/ContextCI?quickstart=1&amp;machine=standardLinux32gb">Open in Codespaces</a>
+      </div>
+    </div>
+    <div class="card">
+      <h3>In your own repository</h3>
+      <ol>
+        <li>Copy <code>.github/workflows/contextci-gate.yml</code></li>
+        <li>Add secrets: <code>DATAHUB_MCP_URL</code>, <code>DATAHUB_GMS_TOKEN</code>, and either <code>GROQ_API_KEY</code> or <code>ANTHROPIC_API_KEY</code></li>
+        <li>Open a pull request that changes a schema</li>
+      </ol>
+      <p style="color:var(--muted);font-size:15px;margin:16px 0 0">
+        With no LLM key the deterministic analyzer runs instead, and the gate still works. If
+        DataHub is unreachable the run degrades to diff-only with a banner rather than failing
+        your build — only a real block verdict exits non-zero.
+      </p>
+      <div class="cta" style="margin-top:22px">
+        <a class="btn" href="https://github.com/LSUDOKO/ContextCI/blob/main/TESTING.md">Testing guide</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div>Built for <strong>Build with DataHub: The Agent Hackathon</strong> · Apache 2.0</div>
+  <div><a href="https://github.com/LSUDOKO/ContextCI">github.com/LSUDOKO/ContextCI</a></div>
+</footer>
+
+</div>
+
+<script>
+// The blast radius draws itself: 13 real downstream assets from the sample catalog.
+(function () {
+  var assets = [
+    ["fct_users_created","dataset",1],["fct_users_deleted","dataset",1],
+    ["User Creations","dataJob",1],["User Deletions","dataJob",1],
+    ["logging_events","dataset",0],["logging_events_bckp","s3",0],
+    ["user_analytics.date_joined","mlFeature",1],["user_features.is_premium","mlFeature",1],
+    ["user_features.visits","mlFeature",1],["user_features.regions","mlFeature",0],
+    ["user_analytics.user_name","mlKey",0],["user_features.user_id","mlKey",1],
+    ["user_features.user_name","mlKey",0]
+  ];
+  var edges = document.getElementById("edges"), targets = document.getElementById("targets");
+  if (!edges || !targets) return;
+  var NS = "http://www.w3.org/2000/svg";
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var top = 16, gap = 22.5, x = 620, w = 340;
+
+  assets.forEach(function (a, i) {
+    var y = top + i * gap, hot = a[2] === 1;
+
+    var p = document.createElementNS(NS, "path");
+    p.setAttribute("d", "M232 159 C 420 159, 440 " + (y + 9) + ", " + x + " " + (y + 9));
+    p.setAttribute("class", "edge" + (hot ? " hot" : "") + (still ? "" : " draw"));
+    p.setAttribute("pathLength", "1");
+    if (!still) p.style.animationDelay = (i * 55) + "ms";
+    edges.appendChild(p);
+
+    var g = document.createElementNS(NS, "g");
+    g.setAttribute("class", "node" + (hot ? " hot" : "") + (still ? "" : " fade"));
+    if (!still) g.style.animationDelay = (280 + i * 55) + "ms";
+
+    var r = document.createElementNS(NS, "rect");
+    r.setAttribute("x", x); r.setAttribute("y", y); r.setAttribute("width", w);
+    r.setAttribute("height", 18); r.setAttribute("rx", 2);
+    g.appendChild(r);
+
+    var t = document.createElementNS(NS, "text");
+    t.setAttribute("x", x + 10); t.setAttribute("y", y + 13);
+    t.textContent = a[0];
+    g.appendChild(t);
+
+    var ty = document.createElementNS(NS, "text");
+    ty.setAttribute("x", x + w - 10); ty.setAttribute("y", y + 13);
+    ty.setAttribute("text-anchor", "end");
+    ty.setAttribute("style", "fill:#5C7A96");
+    ty.textContent = a[1];
+    g.appendChild(ty);
+
+    targets.appendChild(g);
+  });
+})();
+</script>
+</body>
+</html>
