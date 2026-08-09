@@ -48,6 +48,16 @@ updates:
       prefix: "fix"
       include: scope
     labels: ["dependencies", "docker"]
+    ignore:
+      # Pin the Python minor version. pydantic-core publishes no wheels for
+      # 3.14, so a bump to python:3.14-slim builds an image that cannot install
+      # acryl-datahub — Dependabot proposed exactly this in #3. Patch updates
+      # (3.11.x) are still welcome; raise the minor deliberately, once the
+      # dependency tree supports it.
+      - dependency-name: "python"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   # The Codespaces dev container.
   - package-ecosystem: devcontainers
