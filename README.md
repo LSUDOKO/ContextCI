@@ -54,6 +54,9 @@ asset. That round trip, catalog → decision → catalog, is the whole idea.
 
 `make help` lists the rest (`make test`, `make gate DIFF=…`, `make token`).
 
+To let **GitHub Actions** reach that DataHub — so CI resolves real lineage instead of
+degrading to diff-only — see [Hosting DataHub on Codespaces](docs/CODESPACES-DATAHUB.md).
+
 ---
 
 ## The four phases
