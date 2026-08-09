@@ -1,0 +1,71 @@
+[project]
+name = "contextci"
+version = "0.1.0"
+description = "Autonomous DataOps SRE agent that gates schema changes in pull requests using DataHub lineage"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "LSUDOKO" }]
+keywords = ["datahub", "data-governance", "schema-migration", "ci", "lineage", "dbt"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+  "acryl-datahub>=1.7.0",
+  "PyGithub>=2.3.0",
+  "pydantic>=2.7.0",
+  "anthropic>=0.40.0",
+  "groq>=0.20.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.urls]
+Homepage = "https://lsudoko.github.io/ContextCI/"
+Repository = "https://github.com/LSUDOKO/ContextCI"
+
+[project.scripts]
+contextci = "src.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["src"]
+
+# --- Release automation -------------------------------------------------------
+# Versions are derived from Conventional Commit messages, never set by hand:
+#   fix:      -> patch   (0.1.0 -> 0.1.1)
+#   feat:     -> minor   (0.1.0 -> 0.2.0)
+#   feat!: / BREAKING CHANGE: -> major (0.1.0 -> 1.0.0)
+# docs:, chore:, test:, ci: and refactor: appear in the changelog but do not
+# trigger a release on their own.
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["src/__init__.py:__version__"]
+commit_parser = "conventional"
+build_command = ""                      # nothing is published to PyPI; this ships as an Action
+commit_message = "chore(release): {version}\n\n[skip ci]"
+tag_format = "v{version}"
+major_on_zero = false                   # stay in 0.x until a deliberate 1.0.0
+allow_zero_version = true
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.changelog]
+exclude_commit_patterns = ['''^chore\(release\):''']
+
+[tool.semantic_release.remote]
+type = "github"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

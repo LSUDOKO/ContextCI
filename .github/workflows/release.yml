@@ -1,0 +1,64 @@
+name: Release
+
+# Every push to main is evaluated. Conventional Commit messages decide whether a
+# release happens and what the next version is — nobody edits a version by hand.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Semantic version release
+    runs-on: ubuntu-latest
+    # Skip the release commit the bot itself pushes.
+    if: "!contains(github.event.head_commit.message, 'chore(release):')"
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      # A version is never cut from a red build.
+      - name: Run tests
+        run: pytest tests/ -q
+
+      - name: Determine version and release
+        id: release
+        uses: python-semantic-release/python-semantic-release@v10.6.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          git_committer_name: "github-actions"
+          git_committer_email: "actions@users.noreply.github.com"
+
+      - name: Publish release assets
+        uses: python-semantic-release/publish-action@v10.6.1
+        if: steps.release.outputs.released == 'true'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.release.outputs.tag }}
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.release.outputs.released }}" = "true" ]; then
+            echo "### Released ${{ steps.release.outputs.tag }} :rocket:" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### No release — no commits since the last tag warrant a version bump" >> $GITHUB_STEP_SUMMARY
+          fi

@@ -1,0 +1,60 @@
+version: 2
+
+updates:
+  # Python dependencies. acryl-datahub moves fast and its SDK is what ContextCI
+  # reads lineage through, so a broken minor there is worth hearing about early.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      # Conventional Commits, so semantic-release picks these up: a dependency
+      # bump is a patch, not a feature.
+      prefix: "fix"
+      prefix-development: "chore"
+      include: scope
+    labels: ["dependencies"]
+    groups:
+      # One PR for the LLM SDKs rather than three; they are swapped as a set.
+      llm-sdks:
+        patterns: ["anthropic", "groq"]
+      dev-dependencies:
+        dependency-type: development
+
+  # The Actions this repo pins — including python-semantic-release itself.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    commit-message:
+      prefix: "ci"
+      include: scope
+    labels: ["dependencies", "github-actions"]
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # The published container image.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "fix"
+      include: scope
+    labels: ["dependencies", "docker"]
+
+  # The Codespaces dev container.
+  - package-ecosystem: devcontainers
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore"
+      include: scope
+    labels: ["dependencies"]
