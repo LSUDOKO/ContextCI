@@ -1,6 +1,6 @@
 [project]
 name = "contextci"
-version = "0.1.0"
+version = "0.1.1"
 description = "Autonomous DataOps SRE agent that gates schema changes in pull requests using DataHub lineage"
 readme = "README.md"
 requires-python = ">=3.10"
