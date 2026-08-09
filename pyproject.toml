@@ -69,3 +69,7 @@ type = "github"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The tests import `src.…`. Bare `pytest` does not put the working directory on
+# sys.path (only `python -m pytest` does), so without this the suite passes
+# locally and fails in CI with ModuleNotFoundError: No module named 'src'.
+pythonpath = ["."]
