@@ -1,0 +1,11 @@
+diff --git a/migrations/012_drop_field_foo.sql b/migrations/012_drop_field_foo.sql
+new file mode 100644
+--- /dev/null
++++ b/migrations/012_drop_field_foo.sql
+@@ -0,0 +1,6 @@
++-- Dropping a legacy column. Every application test passes: nothing in this
++-- repository mentions the dbt models, Airflow jobs or ML features that read it.
++-- That is precisely the change ContextCI is built to catch.
++BEGIN;
++ALTER TABLE SampleHiveDataset DROP COLUMN field_foo;
++COMMIT;

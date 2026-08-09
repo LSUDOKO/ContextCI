@@ -2,27 +2,57 @@
 
 **Context-Aware CI. Zero Breaking Changes.**
 
-ContextCI is an autonomous DataOps SRE agent that runs as a GitHub Action. When a pull
-request alters a database schema, it traces the change through DataHub's column-level
-lineage, decides whether anything downstream breaks, writes the backward-compatible
-migration, comments on the PR, and **tags the affected datasets back in DataHub** so the
-catalog records that a change is in flight.
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/LSUDOKO/ContextCI?quickstart=1&machine=standardLinux32gb)
 
-DataHub is treated as a two-way operating system, not a read-only catalog: ContextCI reads
-lineage, ownership, glossary terms and tags, then mutates the graph with
-`Schema-Change-Pending`, `Blast-Risk-{level}` and a pending-change note linked to the PR.
+## The 3am page
+
+A backend engineer renames `user_id` to `account_id` in a migration. Every application
+test passes — it is valid SQL, and nothing in that repository mentions data.
+
+Twelve hours later the nightly dbt run produces NULLs, an executive dashboard shows the
+wrong revenue number, and a recommendation model quietly starts training on empty values.
+Nobody gets an error. The on-call data engineer spends the morning grepping commit history
+across ten repositories to find out who changed what.
+
+**The lineage that would have caught this already exists in DataHub.** It is just on the
+wrong side of the merge button.
+
+ContextCI moves it. It runs as a GitHub Action: when a pull request alters a schema, it
+traces the change through DataHub's column-level lineage, decides whether anything
+downstream breaks, writes the backward-compatible migration, comments on the PR, and
+**tags the affected datasets back in DataHub** so the catalog records that a change is in
+flight.
+
+DataHub is treated as a two-way operating system, not a read-only catalog.
 
 ---
 
-## The problem
+## Try it — one command, nothing to install
 
-A developer drops a column. CI is green — the schema change is valid SQL. Three days later
-a dbt model produces NULLs, an ML feature table silently drifts, and an executive dashboard
-shows the wrong revenue number. Nothing errored; the breakage was in a system the PR never
-mentioned.
+Click the Codespaces badge above (pick the **4-core** machine), then:
 
-The lineage that would have caught it already exists in DataHub. ContextCI puts it in the
-pull request, before the merge.
+```bash
+make demo
+```
+
+That boots DataHub, ingests sample metadata with real column-level lineage, runs the gate
+against a breaking `DROP COLUMN`, and prints the exact PR comment it would post. Roughly
+10–15 minutes on a cold start, almost all of it pulling DataHub's images.
+
+```
+4/4  Running the gate against a breaking schema change
+      ALTER TABLE SampleHiveDataset DROP COLUMN field_foo;
+
+ContextCI verdict: block (risk: critical)
+  Exit code 1 — 1 means the gate would block the merge.
+  DataHub UI:  https://…-9002.app.github.dev   (login datahub / datahub)
+```
+
+Then open the DataHub UI it prints and search `SampleHiveDataset` — the tags ContextCI
+just wrote are on the dataset, on the `field_foo` column itself, and on every downstream
+asset. That round trip, catalog → decision → catalog, is the whole idea.
+
+`make help` lists the rest (`make test`, `make gate DIFF=…`, `make token`).
 
 ---
 
@@ -344,6 +374,40 @@ Three more bugs surfaced from the live reruns, all fixed:
   Free disk, then clear it:
   `curl -XPUT localhost:9200/_cluster/settings -H 'Content-Type: application/json' -d '{"persistent":{"cluster.blocks.create_index":null}}'`
 
+## Who this is for
+
+| Role | What changes on Monday |
+| --- | --- |
+| **Data / analytics engineers** | Downstream breakage is caught before merge, not at 3am. The blast radius and a working migration arrive on the PR, so MTTR drops from hours of git archaeology to reading one comment. No more reviewing every backend PR by hand hoping to spot a schema change. |
+| **Software engineers** | Feedback in the tool they already use. No DataHub login, no dbt knowledge, no waiting on a data team review — the PR tells them what they are about to break and hands them the fix. |
+| **ML platform teams** | The failure mode ML actually has: a dropped feature does not raise, it feeds NULLs into training and the model silently degrades. ContextCI treats ML features and models as first-class downstream assets and escalates them above ordinary tables, because they fail quietly. |
+| **Data leadership** | Fewer broken dashboards during business hours, less compute burned on pipelines that were doomed at merge time, and a catalog that records *why* a dataset is flagged instead of going stale. |
+
+### Where it stops
+
+Stated plainly, because a gate you cannot trust is worse than none:
+
+- **Lineage quality is DataHub's, not ours.** On an uninstrumented warehouse you get
+  table-level lineage only, and ContextCI says so on every asset (`⚠️ table-level only`)
+  rather than implying certainty it does not have.
+- **Table-name resolution assumes one platform per repository.** A repo spanning Postgres
+  and Snowflake needs `DATAHUB_PLATFORM` per run.
+- **The migration is a starting point, not a merge-ready commit.** It is generated from
+  real schemas and real query history, and a human still reviews it — the same as any
+  other suggested change.
+
+## Roadmap — other surfaces
+
+The GitHub Action is the right primary surface: no new UI, no new credentials, and it
+lives where the decision is already being made. Two extensions are worth naming:
+
+- **Hosted service / GitHub App** — "connect your repo, paste your DataHub URL" for teams
+  without CI expertise. Deliberately *not* built here: it means holding other people's
+  DataHub credentials, and the Action already installs in three lines of YAML.
+- **VS Code extension** — show the blast radius inline while the migration is being
+  written, before commit. The interesting version is a thin client over the same analyzer,
+  not a second copy of it.
+
 ## Design decisions worth knowing
 
 **Owner @-mentions are opt-in.** DataHub owner names are not necessarily GitHub handles, and
@@ -398,11 +462,19 @@ no DataHub, no LLM API.
 │   ├── code_generator.py       # phase 3 migrations (prompt + templates)
 │   └── github_reporter.py      # phase 4 PR comment and auto-fix commits
 ├── tests/                      # 74 tests, no network or external services
-├── examples/                   # sample diff, generated migration, real PR comment
+├── examples/
+│   ├── demo_sample_hive.diff   # targets the DataHub sample data — use this for the demo
+│   ├── breaking_change.diff    # SQL + Alembic + dbt YAML, shows parser breadth
+│   ├── sample_dbt_fix.sql      # a generated migration
+│   └── sample_pr_comment.md    # a real posted comment
 ├── scripts/
 │   └── make_datahub_token.py   # mint a DataHub PAT into .env
 ├── .github/workflows/
 │   └── contextci-gate.yml      # the GitHub Action
+├── .devcontainer/
+│   └── devcontainer.json       # Codespaces: Python 3.11 + docker-in-docker, 4-core
+├── Makefile                    # make demo / test / gate / token
+├── scripts/demo.sh             # the one-command demo
 ├── .env.example                # every setting, documented
 ├── TESTING.md                  # four-level manual test guide
 ├── Dockerfile
